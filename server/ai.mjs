@@ -8,7 +8,18 @@ import {
   todayYmd,
 } from "./db.mjs";
 import { accountBalances } from "./engine.mjs";
-import { CURRENCY_MIGRATION_LOCK_ERROR, isCurrencyMigrationRequired } from "./currency-state.mjs";
+import { formatMoney } from "./money.mjs";
+import {
+  classifyReadSql,
+  classifyToolCall,
+  dispatchFinanceTool,
+  executeReadSql,
+  getFinanceToolDefinitions,
+  SQL_WRITE_NOT_ALLOWED,
+  summarizeFinanceTool,
+} from "./finance-tools.mjs";
+
+export { summarizeFinanceTool, SQL_WRITE_NOT_ALLOWED } from "./finance-tools.mjs";
 
 const MAX_ITERATIONS = 10;
 const MAX_TOOL_RESULT_CHARS = 4000;
@@ -101,7 +112,14 @@ export async function testAiConnection() {
 /* ------------------------- 动态 Schema 内省 ------------------------- */
 
 // 不向模型展示的表：内部表 + 受保护表（见工作规则）
-const HIDDEN_SCHEMA_TABLES = new Set(["chat_sessions", "chat_messages", "settings", "schema_migrations", "im_channels"]);
+const HIDDEN_SCHEMA_TABLES = new Set([
+  "chat_sessions",
+  "chat_messages",
+  "settings",
+  "schema_migrations",
+  "im_channels",
+  "fx_rates",
+]);
 
 function quoteIdent(name) {
   return `"${String(name).replace(/"/g, '""')}"`;
@@ -136,9 +154,19 @@ export function buildSchemaDoc() {
 export function buildSystemPrompt() {
   const balances = accountBalances();
   const accounts = db
-    .prepare("SELECT id,name,type,on_budget,closed FROM accounts ORDER BY sort_order")
+    .prepare("SELECT id,name,type,on_budget,closed,currency_code FROM accounts ORDER BY sort_order")
     .all()
-    .map((a) => `  - ${a.name} | id=${a.id} | type=${a.type} | on_budget=${a.on_budget} | closed=${a.closed} | balance=${((balances.get(a.id) || 0) / 100).toFixed(2)}元`);
+    .map((a) => {
+      const balance = balances.get(a.id) || 0;
+      const code = a.currency_code;
+      let formatted = String(balance);
+      try {
+        if (code) formatted = formatMoney(balance, code, { locale: "zh-CN" });
+      } catch {
+        formatted = String(balance);
+      }
+      return `  - ${a.name} | id=${a.id} | type=${a.type} | currencyCode=${code || "?"} | on_budget=${a.on_budget} | closed=${a.closed} | balance=${formatted} (${balance} minor units)`;
+    });
 
   const groups = db
     .prepare("SELECT * FROM category_groups ORDER BY sort_order")
@@ -159,18 +187,19 @@ export function buildSystemPrompt() {
 4. 关注资金账龄（Age of Money）。
 
 # 数据库 Schema（由当前数据库实时内省生成，列标记：PK=主键、NOT NULL=必填、DEFAULT=有默认值可省略、FK→表=外键）
-金额一律以「分」为单位的整数存储！¥12.34 = 1234。
+金额以各账户/账本币种的最小单位（minor units）存储。USD/CNY 等 exponent=2 的币种：12.34 USD = 1234；JPY exponent=0：1234 JPY = 1234。禁止假设所有金额都除以 100，禁止把所有币种都叫同一单位。
 ${buildSchemaDoc()}
 
 # 关键业务语义（固定不变，与上面的实时 Schema 配合理解）
-- 账户余额 = starting_balance + SUM(transactions.amount WHERE is_start=0)；is_start=1 的行是期初余额，禁止修改或删除。
-- 账户间转账 = 两条腿：源账户 amount 为负、目标账户 amount 为正，两行 transfer_account_id 互指对方、pair_id 相同、备注一致。目标腿 payee_name 为空串。绝不能只插入一条腿。
-- 预算内账户之间互转 category_id 必须为 NULL，不影响预算；只有带 category_id 的交易才影响分类活动。
+- 账户余额 = starting_balance + SUM(transactions.amount WHERE is_start=0)；is_start=1 的行是期初余额，禁止修改或删除。记账金额始终是该账户 currency_code 的 minor units。
+- 账户间转账必须走 post_transfer，系统写入两条腿：源账户 amount 为负、目标账户 amount 为正，两行 transfer_account_id 互指对方、pair_id 相同、备注一致。目标腿 payee_name 为空串。绝不能只插入一条腿。
+- 同币种转账两端绝对值相同；异币种必须同时提供银行真实的 fromAmountMinor 与 toAmountMinor，禁止用参考汇率补值。
+- 预算内账户之间同币种互转 category_id 必须为 NULL，不影响预算；只有带 category_id 的交易才影响分类活动。
 - 收入分类：category_groups.is_income=1 的分组下的分类是「收入来源」（如工资薪酬、奖金、理财收益、其他收入）。正数金额 + 收入分类 = 计入 Ready to Assign（待分配），并作为收入来源统计；收入分类不接受负金额（负数应记录在支出分类或退款原分类）。
 - 无分类的正向流入也计入 Ready to Assign（旧约定兜底）；无分类的负向流出计入「未分类支出」。退款/报销记回原支出分类，会抵减该分类支出、不计入收入。
 - 信用卡消费：category_id 写实际消费分类（不要写任何 cc: 分类），系统会自动把额度转移到还款科目；信用卡余额为负代表欠款。
-- 向信用卡转账=还款：transfer_account_id 指向该卡、amount 为负（从付款账户看）。
-- assignments 的 category_id 也可以是合成 id 'cc:<account_uuid>'，表示给某张信用卡的还款科目分配金额。
+- 向信用卡转账=还款：使用 post_transfer，从付款账户转到该卡。
+- assignments 的 category_id 也可以是合成 id 'cc:<account_uuid>'，表示给某张信用卡的还款科目分配金额；分配必须带 currencyCode。
 - accounts.type ∈ checking/savings/cash/creditCard/lineOfCredit/investment/property/vehicle/otherAsset/studentLoan/personalLoan/otherLiability；
   现金类(checking/savings/cash)与信用卡默认 on_budget=1。
 
@@ -183,19 +212,20 @@ ${accounts.join("\n") || "  （暂无账户）"}
 ${groups || "  （暂无分类）"}
 
 # 工作规则
-1. 你拥有 run_sql 工具直接操作上述数据库。回答任何数据问题前先 SELECT 查询确认事实，不要凭空猜测。
-2. 只允许单条 SQL；SELECT 建议加 LIMIT；写操作只能是 INSERT/UPDATE/DELETE 单条语句。
-3. 禁止触碰的表：chat_sessions、chat_messages、settings、im_channels。禁止 ATTACH/PRAGMA/VACUUM 等命令。
-4. ${requireConfirmation() ? "任何写操作（INSERT/UPDATE/DELETE）系统会强制弹出用户确认，你只需发起，然后根据工具返回结果继续。" : "写操作（INSERT/UPDATE/DELETE）会立即执行、无需用户确认，你发起后会直接收到执行结果，请据此继续并向用户报告变更摘要。"}
-5. 写入后建议 SELECT 验证结果，并向用户报告变更摘要。
-6. 回复使用 Markdown。适合时可用 mermaid 代码块（pie/flowchart/xychart 等）做可视化，例如：
+1. 回答任何数据问题前先用 run_sql 做只读 SELECT 确认事实，不要凭空猜测。run_sql 不能写入。
+2. 财务写入必须使用类型化工具：post_transaction、post_transfer、create_account、assign_budget、set_goal、reconcile_account、update_category_note。它们与网页走同一套业务 Interface。
+3. 普通交易按账户币种提交 amountMinor。跨币种转账必须提交银行真实的 fromAmountMinor 与 toAmountMinor；缺少到账金额时先追问，不要调用参考汇率自动补值。
+4. 禁止触碰的表：chat_sessions、chat_messages、settings、schema_migrations、im_channels、fx_rates。禁止 ATTACH/PRAGMA/VACUUM 以及任何写 SQL。
+5. ${requireConfirmation() ? "类型化写工具会先进入用户确认，你只需发起，然后根据工具返回结果继续。" : "类型化写工具会立即执行、无需用户确认，你发起后会直接收到执行结果，请据此继续并向用户报告变更摘要。"}
+6. 写入后建议 SELECT 验证结果，并向用户报告变更摘要。
+7. 回复使用 Markdown。适合时可用 mermaid 代码块（pie/flowchart/xychart 等）做可视化，例如：
    \`\`\`mermaid
    pie title 支出构成
      "餐饮" : 45
    \`\`\`
    注意 mermaid pie 标签若含特殊字符请加引号。
-7. 数字输出统一换算成元（分/100）保留两位小数；统计口径上，分析支出时排除预算内账户之间的互相转账。
-8. 如果用户的问题与账本无关，也可以正常聊天，但优先引导到财务管理话题。`;
+8. 数字输出按账户币种的 exponent 格式化（JPY 不要伪造两位小数）；统计口径上，分析支出时排除预算内账户之间的互相转账。
+9. 如果用户的问题与账本无关，也可以正常聊天，但优先引导到财务管理话题。`;
 
   // 用户自定义上下文：由系统设置「额外提示词」注入，网页端与 IM 共用同一份系统提示词
   const extraPrompt = getSetting("ai_extra_prompt", "").trim();
@@ -218,11 +248,13 @@ function imageGuideAddition() {
 # 视觉能力
 你具备多模态视觉能力，可以直接“看到”用户发送的图片（票据、小票、转账截图、账单、表格等）。
 当用户发送图片时：
-- 仔细识别其中的关键信息：商户/收款方、金额（注意税额/合计/实付）、日期、支付方式/账户、分类线索、订单号等；
-- 金额换算成「分」：¥12.34=1234，小数点后两位，缺失则按 0 补齐；
+- 仔细识别其中的关键信息：商户/收款方、金额（注意税额/合计/实付）、币种、日期、支付方式/账户、分类线索、订单号等；
+- 入账金额使用该账户币种的 minor units；JPY 不要补两位小数。
+- 若图片只有 EUR 等原始金额、不知道账户（例如 USD 卡）最终入账金额，先追问，不要按参考汇率换算后调用 post_transaction。
+- 若原始金额与账户入账金额都有：amountMinor 用账户入账金额，并用 originalCurrencyCode / originalAmountMinor 保存原始金额。
 - 日期若图片上未写明则回落到「今天」${todayYmd()}，不要臆造；
 - 结合已有的账户/分类信息，选择最匹配的账户与分类；若无法确定则在回复中向用户确认或给出最可能的建议；
-- 随后用 run_sql 工具写入交易（transactions 表），${requireConfirmation() ? "同样需要用户确认才会执行。" : "会立即执行、无需用户确认。"}`;
+- 随后用 post_transaction 或 post_transfer 写入，${requireConfirmation() ? "同样需要用户确认才会执行。" : "会立即执行、无需用户确认。"}禁止用 run_sql 写入。`;
 }
 
 // 带视觉引导的完整系统提示词
@@ -232,74 +264,55 @@ export function buildSystemPromptWithVision() {
 
 /* ------------------------- SQL safety ------------------------- */
 
-const FORBIDDEN_SQL = /\b(attach|detach|pragma|vacuum|reindex)\b/i;
-const PROTECTED_TABLES = /\b(chat_sessions|chat_messages|settings|im_channels)\b/i;
-
 export function classifySql(rawSql) {
-  const sql = String(rawSql || "").trim().replace(/;+\s*$/, "");
-  if (!sql) return { error: "empty sql" };
-  if (/;/.test(sql)) return { error: "only one statement allowed" };
-  if (FORBIDDEN_SQL.test(sql)) return { error: "command not allowed" };
-  if (PROTECTED_TABLES.test(sql)) return { error: "this table is protected" };
-  if (/^(select|with)\b/i.test(sql)) return { kind: "read", sql };
-  if (/^(insert|update|delete)\b/i.test(sql)) return { kind: "write", sql };
-  return { error: "only SELECT / INSERT / UPDATE / DELETE are supported" };
+  return classifyReadSql(db, rawSql);
 }
 
 function execRead(sql) {
-  try {
-    let rows = db.prepare(sql).all();
-    const total = rows.length;
-    const truncated = total > 40;
-    if (truncated) rows = rows.slice(0, 40);
-    return JSON.stringify({ ok: true, rowCount: total, truncated, rows });
-  } catch (e) {
-    return JSON.stringify({ ok: false, error: String(e.message || e) });
-  }
+  return JSON.stringify(executeReadSql(db, sql));
 }
 
-function execWrite(sql) {
-  if (isCurrencyMigrationRequired(db)) {
-    return JSON.stringify({
-      ok: false,
-      error: CURRENCY_MIGRATION_LOCK_ERROR,
-      code: CURRENCY_MIGRATION_LOCK_ERROR,
-    });
-  }
-  try {
-    const info = db.prepare(sql).run();
-    return JSON.stringify({ ok: true, changes: info.changes });
-  } catch (e) {
-    return JSON.stringify({ ok: false, error: String(e.message || e) });
-  }
+function jsonToolError(cls) {
+  const error = cls.error || "tool error";
+  const payload = { ok: false, error };
+  if (cls.code || error === SQL_WRITE_NOT_ALLOWED) payload.code = cls.code || error;
+  return JSON.stringify(payload);
 }
 
 /* ------------------------- Persistence ------------------------- */
 
 let insMsgStmt = null;
-let insHasImages = null;
+let insColumns = null;
+function chatMessageColumns() {
+  if (insColumns) return insColumns;
+  try {
+    insColumns = new Set(db.prepare("PRAGMA table_info(chat_messages)").all().map((c) => c.name));
+  } catch {
+    insColumns = new Set();
+  }
+  return insColumns;
+}
+
 function getInsStmt() {
   if (insMsgStmt) return insMsgStmt;
-  // 兼容迁移前后的表结构：images 列可能尚未存在（老库重启瞬间）
-  try {
-    const cols = db.prepare("PRAGMA table_info(chat_messages)").all().map((c) => c.name);
-    if (cols.includes("images")) {
-      insHasImages = true;
-      insMsgStmt = db.prepare(
-        "INSERT INTO chat_messages(id,session_id,role,content,tool_calls,tool_call_id,reasoning_content,pending_sql,pending_purpose,pending_index,resolved,created_at,images) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)"
-      );
-    } else {
-      insHasImages = false;
-      insMsgStmt = db.prepare(
-        "INSERT INTO chat_messages(id,session_id,role,content,tool_calls,tool_call_id,reasoning_content,pending_sql,pending_purpose,pending_index,resolved,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
-      );
-    }
-  } catch {
-    insHasImages = false;
-    insMsgStmt = db.prepare(
-      "INSERT INTO chat_messages(id,session_id,role,content,tool_calls,tool_call_id,reasoning_content,pending_sql,pending_purpose,pending_index,resolved,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
-    );
-  }
+  const cols = chatMessageColumns();
+  const names = [
+    "id",
+    "session_id",
+    "role",
+    "content",
+    "tool_calls",
+    "tool_call_id",
+    "reasoning_content",
+    "pending_sql",
+    "pending_purpose",
+    "pending_index",
+    "resolved",
+    "created_at",
+  ];
+  if (cols.has("pending_tool")) names.splice(names.indexOf("resolved"), 0, "pending_tool", "pending_args");
+  if (cols.has("images")) names.push("images");
+  insMsgStmt = { names, stmt: db.prepare(`INSERT INTO chat_messages(${names.join(",")}) VALUES(${names.map(() => "?").join(",")})`) };
   return insMsgStmt;
 }
 
@@ -370,7 +383,57 @@ export function appendUserMessage(sessionId, content) {
   return addMessage(sessionId, { role: "user", content: text });
 }
 
+const PENDING_WHERE =
+  "resolved=0 AND (pending_tool IS NOT NULL OR pending_sql IS NOT NULL)";
+
+export function getPendingMessage(sessionId) {
+  const cols = chatMessageColumns();
+  if (cols.has("pending_tool")) {
+    return db
+      .prepare(
+        `SELECT * FROM chat_messages WHERE session_id=? AND ${PENDING_WHERE} ORDER BY rowid DESC LIMIT 1`
+      )
+      .get(sessionId);
+  }
+  return db
+    .prepare(
+      "SELECT * FROM chat_messages WHERE session_id=? AND resolved=0 AND pending_sql IS NOT NULL ORDER BY rowid DESC LIMIT 1"
+    )
+    .get(sessionId);
+}
+
+export function sessionHasPending(sessionId) {
+  return !!getPendingMessage(sessionId);
+}
+
+function parsePendingArgs(raw) {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function pendingPayload(m) {
+  if (m.resolved !== 0 || (!m.pending_tool && !m.pending_sql)) return null;
+  const args = parsePendingArgs(m.pending_args);
+  const summary = m.pending_tool
+    ? summarizeFinanceTool(db, m.pending_tool, args || {})
+    : m.pending_purpose || "历史 SQL 写操作已停用";
+  return {
+    sql: m.pending_sql || null,
+    purpose: m.pending_purpose ?? null,
+    index: m.pending_index ?? 0,
+    tool: m.pending_tool || null,
+    args,
+    summary,
+  };
+}
+
 function transformMsg(m) {
+  const pending = pendingPayload(m);
   return {
     id: m.id,
     role: m.role,
@@ -378,11 +441,8 @@ function transformMsg(m) {
     reasoningContent: m.reasoning_content ?? null,
     toolCalls: m.tool_calls ? JSON.parse(m.tool_calls) : null,
     toolCallId: m.tool_call_id ?? null,
-    pending:
-      m.resolved === 0 && m.pending_sql
-        ? { sql: m.pending_sql, purpose: m.pending_purpose, index: m.pending_index ?? 0 }
-        : null,
-    proposedSql: m.pending_sql,
+    pending,
+    proposedSql: pending?.sql ?? m.pending_sql ?? null,
     resolved: m.resolved === 1,
     createdAt: m.created_at,
     images: parseImagesField(m.images) || null,
@@ -395,64 +455,26 @@ function touchSession(sessionId) {
 
 function addMessage(sessionId, fields) {
   const id = uid();
-  const stmt = getInsStmt();
+  const { names, stmt } = getInsStmt();
   const imagesJson = fields.images && fields.images.length ? JSON.stringify(fields.images) : null;
-  try {
-    if (insHasImages) {
-      stmt.run(
-        id,
-        sessionId,
-        fields.role,
-        fields.content ?? null,
-        fields.toolCalls ? JSON.stringify(fields.toolCalls) : null,
-        fields.toolCallId ?? null,
-        fields.reasoningContent ?? null,
-        fields.pendingSql ?? null,
-        fields.pendingPurpose ?? null,
-        fields.pendingIndex ?? null,
-        fields.resolved === 0 ? 0 : 1,
-        fields.createdAt ?? nowIso(),
-        imagesJson
-      );
-    } else {
-      stmt.run(
-        id,
-        sessionId,
-        fields.role,
-        fields.content ?? null,
-        fields.toolCalls ? JSON.stringify(fields.toolCalls) : null,
-        fields.toolCallId ?? null,
-        fields.reasoningContent ?? null,
-        fields.pendingSql ?? null,
-        fields.pendingPurpose ?? null,
-        fields.pendingIndex ?? null,
-        fields.resolved === 0 ? 0 : 1,
-        fields.createdAt ?? nowIso()
-      );
-    }
-  } catch (e) {
-    // 若因列缺失导致失败，回退到无 images 的语句
-    if (String(e.message || "").includes("images")) {
-      insHasImages = false;
-      insMsgStmt = db.prepare(
-        "INSERT INTO chat_messages(id,session_id,role,content,tool_calls,tool_call_id,reasoning_content,pending_sql,pending_purpose,pending_index,resolved,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)"
-      );
-      insMsgStmt.run(
-        id,
-        sessionId,
-        fields.role,
-        fields.content ?? null,
-        fields.toolCalls ? JSON.stringify(fields.toolCalls) : null,
-        fields.toolCallId ?? null,
-        fields.reasoningContent ?? null,
-        fields.pendingSql ?? null,
-        fields.pendingPurpose ?? null,
-        fields.pendingIndex ?? null,
-        fields.resolved === 0 ? 0 : 1,
-        fields.createdAt ?? nowIso()
-      );
-    } else throw e;
-  }
+  const values = {
+    id,
+    session_id: sessionId,
+    role: fields.role,
+    content: fields.content ?? null,
+    tool_calls: fields.toolCalls ? JSON.stringify(fields.toolCalls) : null,
+    tool_call_id: fields.toolCallId ?? null,
+    reasoning_content: fields.reasoningContent ?? null,
+    pending_sql: fields.pendingSql ?? null,
+    pending_purpose: fields.pendingPurpose ?? null,
+    pending_index: fields.pendingIndex ?? null,
+    pending_tool: fields.pendingTool ?? null,
+    pending_args: fields.pendingArgs != null ? (typeof fields.pendingArgs === "string" ? fields.pendingArgs : JSON.stringify(fields.pendingArgs)) : null,
+    resolved: fields.resolved === 0 ? 0 : 1,
+    created_at: fields.createdAt ?? nowIso(),
+    images: imagesJson,
+  };
+  stmt.run(...names.map((name) => values[name]));
   touchSession(sessionId);
   return id;
 }/* ------------------------- History for LLM ------------------------- */
@@ -548,38 +570,8 @@ export function buildLlmMessages(sessionId, opts = {}) {
   return out;
 }
 
-function getTools() {
-  const writeHint = requireConfirmation()
-    ? "INSERT/UPDATE/DELETE requires explicit user confirmation before it executes."
-    : "INSERT/UPDATE/DELETE executes immediately without confirmation and returns the result.";
-  return [
-    {
-      type: "function",
-      function: {
-        name: "run_sql",
-        description: `Execute one SQL statement against the budget database. SELECT/WITH runs immediately and returns rows. ${writeHint}`,
-        parameters: {
-          type: "object",
-          properties: {
-            sql: { type: "string", description: "A single SQLite statement. Amounts must be integer cents." },
-            purpose: { type: "string", description: "Short human-readable reason for this statement, shown to the user for confirmation." },
-          },
-          required: ["sql"],
-        },
-      },
-    },
-  ];
-}
-const TOOLS = getTools();
-
-function parseToolArgs(call) {
-  try {
-    const raw = typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments ?? {});
-    const args = JSON.parse(raw || "{}");
-    return { sql: String(args.sql || ""), purpose: args.purpose ? String(args.purpose) : null };
-  } catch {
-    return { sql: "", purpose: null };
-  }
+export function getTools() {
+  return getFinanceToolDefinitions({ requireConfirmation: requireConfirmation() });
 }
 
 // 拆分工具调用计划：首个写操作之前的读语句立即执行；写操作单独等待用户确认。
@@ -625,10 +617,7 @@ export async function runAgent(sessionId, opts = {}) {
         name: tc.function?.name,
         arguments: tc.function?.arguments,
       }));
-      const plans = calls.map((call) => {
-        const { sql, purpose } = parseToolArgs(call);
-        return { call, sql, purpose, cls: classifySql(sql) };
-      });
+      const plans = calls.map((call) => classifyToolCall(db, call));
       const { executable, writePlan, visibleCalls } = splitToolPlans(plans);
       addMessage(sessionId, {
         role: "assistant",
@@ -637,13 +626,12 @@ export async function runAgent(sessionId, opts = {}) {
         reasoningContent: msg.reasoning_content ?? null,
       });
 
-      let stopped = false;
       for (const p of executable) {
         if (p.cls.error) {
           addMessage(sessionId, {
             role: "tool",
             toolCallId: p.call.id,
-            content: truncate(JSON.stringify({ ok: false, error: p.cls.error })),
+            content: truncate(jsonToolError(p.cls)),
           });
         } else {
           addMessage(sessionId, {
@@ -656,17 +644,14 @@ export async function runAgent(sessionId, opts = {}) {
 
       if (writePlan) {
         if (!requireConfirmation()) {
-          // 自动执行模式：直接写入、无需用户确认，继续让 LLM 汇总结果
-          const writeResult = writePlan.cls.error
-            ? JSON.stringify({ ok: false, error: writePlan.cls.error })
-            : execWrite(writePlan.cls.sql);
-          // 写入的 tool 结果需要与 pending 使用的同一 call.id 对齐，避免悬空 tool_calls
+          const writeResult = JSON.stringify(dispatchFinanceTool(db, writePlan.name, writePlan.args));
           addMessage(sessionId, {
             role: "assistant",
             content: "",
             toolCalls: [writePlan.call],
             reasoningContent: msg.reasoning_content ?? null,
-            pendingSql: writePlan.cls.sql,
+            pendingTool: writePlan.name,
+            pendingArgs: writePlan.args,
             pendingPurpose: writePlan.purpose,
             pendingIndex: 0,
             resolved: 1,
@@ -683,7 +668,8 @@ export async function runAgent(sessionId, opts = {}) {
           content: "",
           toolCalls: [writePlan.call],
           reasoningContent: msg.reasoning_content ?? null,
-          pendingSql: writePlan.cls.sql,
+          pendingTool: writePlan.name,
+          pendingArgs: writePlan.args,
           pendingPurpose: writePlan.purpose,
           pendingIndex: 0,
           resolved: 0,
@@ -706,11 +692,7 @@ export async function runAgent(sessionId, opts = {}) {
 }
 
 export async function confirmPending(sessionId, approve) {
-  const row = db
-    .prepare(
-      "SELECT * FROM chat_messages WHERE session_id=? AND resolved=0 AND pending_sql IS NOT NULL ORDER BY rowid DESC LIMIT 1"
-    )
-    .get(sessionId);
+  const row = getPendingMessage(sessionId);
   if (!row) return { status: "idle", changed: false };
 
   const call = JSON.parse(row.tool_calls)[0];
@@ -719,7 +701,21 @@ export async function confirmPending(sessionId, approve) {
   let result;
   let changed = false;
   if (approve) {
-    result = execWrite(row.pending_sql);
+    if (row.pending_tool) {
+      let args = {};
+      try {
+        args = JSON.parse(row.pending_args || "{}");
+      } catch {
+        args = {};
+      }
+      result = JSON.stringify(dispatchFinanceTool(db, row.pending_tool, args));
+    } else {
+      result = JSON.stringify({
+        ok: false,
+        error: SQL_WRITE_NOT_ALLOWED,
+        code: SQL_WRITE_NOT_ALLOWED,
+      });
+    }
     let parsed = {};
     try {
       parsed = JSON.parse(result);

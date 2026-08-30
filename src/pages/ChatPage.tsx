@@ -639,8 +639,16 @@ function MessageUnitView({
           <ShieldAlert size={14} /> {t("chat_confirmTitle")}
         </div>
         <div className="px-4 py-3">
-          {p.purpose && <p className="mb-2 text-[13px] leading-relaxed text-slate-600">{p.purpose}</p>}
-          <pre className="overflow-x-auto rounded-lg bg-navy-900 p-3 text-xs leading-relaxed text-slate-100">{p.sql}</pre>
+          {p.summary ? (
+            <p className="mb-2 text-[13px] leading-relaxed text-slate-700">{p.summary}</p>
+          ) : (
+            <>
+              {p.purpose && <p className="mb-2 text-[13px] leading-relaxed text-slate-600">{p.purpose}</p>}
+              {p.sql ? (
+                <pre className="overflow-x-auto rounded-lg bg-navy-900 p-3 text-xs leading-relaxed text-slate-100">{p.sql}</pre>
+              ) : null}
+            </>
+          )}
           <p className="mt-2 text-xs text-slate-400">{t("chat_confirmDesc")}</p>
           <div className="mt-3 flex gap-2">
             <Btn variant="primary" disabled={confirming} onClick={onConfirm}>

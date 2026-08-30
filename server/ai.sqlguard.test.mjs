@@ -7,18 +7,33 @@ import path from "node:path";
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ynab-ai-test-"));
 
 const { classifySql } = await import("./ai.mjs");
+const { db } = await import("./db.mjs");
 
 describe("classifySql", () => {
   it("classifies plain reads as read", () => {
     expect(classifySql("SELECT * FROM accounts").kind).toBe("read");
     expect(classifySql("  select id from categories limit 5").kind).toBe("read");
     expect(classifySql("WITH t AS (SELECT 1) SELECT * FROM t").kind).toBe("read");
+    expect(classifySql("SELECT currency_code FROM currency_ledgers").kind).toBe("read");
   });
 
-  it("classifies single writes as write", () => {
-    expect(classifySql("INSERT INTO accounts(id,name,type) VALUES('a','b','cash')").kind).toBe("write");
-    expect(classifySql("UPDATE accounts SET name='x' WHERE id='a'").kind).toBe("write");
-    expect(classifySql("DELETE FROM assignments WHERE month='2026-01'").kind).toBe("write");
+  it("rejects writes instead of classifying them as executable SQL", () => {
+    expect(classifySql("INSERT INTO accounts(id,name,type) VALUES('a','b','cash')").error).toBe("sql_write_not_allowed");
+    expect(classifySql("UPDATE accounts SET name='x' WHERE id='a'").error).toBe("sql_write_not_allowed");
+    expect(classifySql("DELETE FROM assignments WHERE month='2026-01'").error).toBe("sql_write_not_allowed");
+    expect(classifySql("REPLACE INTO accounts(id,name,type) VALUES('a','b','cash')").error).toBe("sql_write_not_allowed");
+  });
+
+  it("rejects writing CTEs even when the statement starts with WITH", () => {
+    const del = classifySql(
+      "WITH doomed AS (SELECT id FROM accounts) DELETE FROM accounts WHERE id IN (SELECT id FROM doomed) RETURNING id"
+    );
+    expect(del.error).toBe("sql_write_not_allowed");
+    expect(del.kind).not.toBe("read");
+    const upd = classifySql(
+      "WITH doomed AS (SELECT category_id FROM assignments) UPDATE assignments SET assigned=0 WHERE category_id IN (SELECT category_id FROM doomed)"
+    );
+    expect(upd.error).toBe("sql_write_not_allowed");
   });
 
   it("rejects multiple statements", () => {
@@ -43,6 +58,15 @@ describe("classifySql", () => {
     expect(classifySql("select * from settings").error).toBeTruthy();
     expect(classifySql("SELECT * FROM chat_messages LIMIT 10").error).toBeTruthy();
     expect(classifySql("WITH s AS (SELECT * FROM settings) SELECT * FROM s").error).toBeTruthy();
+    expect(classifySql("SELECT * FROM schema_migrations").error).toBeTruthy();
+    expect(classifySql("SELECT * FROM fx_rates").error).toBeTruthy();
+    expect(classifySql("SELECT * FROM im_channels").error).toBeTruthy();
+  });
+
+  it("does not mutate the database when classifying a write CTE", () => {
+    const before = db.prepare("SELECT COUNT(*) c FROM accounts").get().c;
+    classifySql("WITH doomed AS (SELECT id FROM accounts) DELETE FROM accounts WHERE id IN (SELECT id FROM doomed)");
+    expect(db.prepare("SELECT COUNT(*) c FROM accounts").get().c).toBe(before);
   });
 
   it("rejects non-SQL statements", () => {

@@ -33,6 +33,8 @@ describe("buildSchemaDoc：从数据库动态内省 schema", () => {
     expect(doc).not.toContain("chat_messages");
     expect(doc).not.toContain("settings");
     expect(doc).not.toContain("schema_migrations");
+    expect(doc).not.toContain("im_channels");
+    expect(doc).not.toContain("fx_rates");
     expect(doc).not.toContain("sqlite_");
   });
 
@@ -53,10 +55,20 @@ describe("buildSchemaDoc：从数据库动态内省 schema", () => {
     expect(prompt).toContain("tx_tags");
     // 动态部分：实时账户快照仍在
     expect(prompt).toContain("账户：");
-    // 固定部分：关键业务语义保留（分单位 / 两条腿转账 / 保护表）
-    expect(prompt).toContain("「分」");
+    // 固定部分：关键业务语义保留（账户币种最小单位 / 两条腿转账 / 保护表）
+    expect(prompt).toMatch(/最小单位|minor units/i);
+    expect(prompt).not.toContain("金额一律以「分」");
     expect(prompt).toContain("两条腿");
     expect(prompt).toContain("chat_messages");
+    expect(prompt).toContain("post_transaction");
+    expect(prompt).not.toContain("用 run_sql 工具写入");
+  });
+
+  it("schema 文档不暴露受保护表，包括汇率与迁移状态", () => {
+    const doc = buildSchemaDoc();
+    expect(doc).not.toContain("fx_rates");
+    expect(doc).not.toContain("schema_migrations");
+    expect(doc).toContain("currency_ledgers");
   });
 
   it("未配置额外提示词时系统提示词不含自定义上下文段", () => {

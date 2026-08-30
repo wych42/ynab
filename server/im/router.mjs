@@ -1,5 +1,14 @@
 import { db, getSetting } from "../db.mjs";
-import { createSession, appendUserMessage, runAgent, confirmPending, normalizeImages } from "../ai.mjs";
+import {
+  createSession,
+  appendUserMessage,
+  runAgent,
+  confirmPending,
+  normalizeImages,
+  getPendingMessage,
+  sessionHasPending,
+  summarizeFinanceTool,
+} from "../ai.mjs";
 import { formatForIm } from "./format.mjs";
 
 function requireConfirmation() {
@@ -20,16 +29,29 @@ const NEW_SESSION_HINT = "🆕 已为你开启新会话，直接说需求就行�
 const NEW_SESSION_ABANDONED = "\n（上一会话中待确认的写操作已作废。）";
 
 function pendingInfo(sessionId) {
-  const row = db
-    .prepare("SELECT pending_sql, pending_purpose FROM chat_messages WHERE session_id=? AND resolved=0 AND pending_sql IS NOT NULL ORDER BY rowid DESC LIMIT 1")
-    .get(sessionId);
-  return row ? { sql: row.pending_sql, purpose: row.pending_purpose } : null;
+  const row = getPendingMessage(sessionId);
+  if (!row) return null;
+  let args = {};
+  try {
+    args = JSON.parse(row.pending_args || "{}");
+  } catch {
+    args = {};
+  }
+  const summary = row.pending_tool
+    ? summarizeFinanceTool(db, row.pending_tool, args)
+    : row.pending_purpose || "历史 SQL 写操作已停用";
+  return { purpose: row.pending_purpose, summary, typed: !!row.pending_tool };
 }
 
 function pendingHint(info) {
   const lines = ["⚠️ 助手请求修改你的账本："];
-  if (info.purpose) lines.push(`目的：${info.purpose}`);
-  lines.push(`SQL：${info.sql.slice(0, 300)}${info.sql.length > 300 ? "…" : ""}`);
+  if (info?.typed) {
+    if (info.summary) lines.push(info.summary);
+  } else if (info?.purpose) {
+    lines.push(`目的：${info.purpose}`);
+  } else if (info?.summary) {
+    lines.push(info.summary);
+  }
   lines.push("回复「确认」执行，或回复「取消」放弃。");
   return lines.join("\n");
 }
@@ -63,9 +85,7 @@ export function findOrCreateSession(channelRow, externalId) {
 }
 
 function hasPending(sessionId) {
-  return !!db
-    .prepare("SELECT id FROM chat_messages WHERE session_id=? AND resolved=0 AND pending_sql IS NOT NULL LIMIT 1")
-    .get(sessionId);
+  return sessionHasPending(sessionId);
 }
 
 // 收集 sinceRowid 之后助手产生的可见回复，合并成一段 IM 文本

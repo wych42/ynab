@@ -228,7 +228,7 @@ function stubLlm(firstToolSql = null) {
   );
 }
 
-describe("AI/IM SQL writes share the currency migration lock", () => {
+describe("AI/IM writes share the currency migration lock", () => {
   beforeAll(() => {
     setSetting("currency_migration_status", "pending");
     setSetting("ai_key", "test-key");
@@ -254,11 +254,11 @@ describe("AI/IM SQL writes share the currency migration lock", () => {
     expect(confirmed.status).toBe(200);
     expect(confirmed.json.changed).toBe(false);
     const payload = lastToolPayload(confirmed.json.messages);
-    expect(payload).toEqual({ ok: false, error: LOCK, code: LOCK });
+    expect(payload.code).toBe("sql_write_not_allowed");
     expect(accountExists("acc-ai-lock-web")).toBe(false);
   });
 
-  it("IM confirmPending uses the same SQL write boundary", async () => {
+  it("IM confirmPending rejects leftover pending_sql writes", async () => {
     stubLlm();
     const session = createSession("im-lock");
     appendUserMessage(session.id, "新建账户");
@@ -269,11 +269,11 @@ describe("AI/IM SQL writes share the currency migration lock", () => {
     const tool = db
       .prepare("SELECT content FROM chat_messages WHERE session_id=? AND role='tool' ORDER BY rowid DESC LIMIT 1")
       .get(session.id);
-    expect(JSON.parse(tool.content)).toEqual({ ok: false, error: LOCK, code: LOCK });
+    expect(JSON.parse(tool.content).code).toBe("sql_write_not_allowed");
     expect(accountExists("acc-ai-lock-im")).toBe(false);
   });
 
-  it("auto-confirm agent writes go through the same SQL write boundary", async () => {
+  it("auto-confirm agent SQL writes are rejected without touching finance data", async () => {
     setSetting("ai_require_confirmation", "0");
     stubLlm("INSERT INTO accounts(id,name,type) VALUES('acc-ai-lock-auto','AI锁免确认','cash')");
     const session = createSession("auto-lock");
@@ -284,8 +284,58 @@ describe("AI/IM SQL writes share the currency migration lock", () => {
     const tool = db
       .prepare("SELECT content FROM chat_messages WHERE session_id=? AND role='tool' ORDER BY rowid DESC LIMIT 1")
       .get(session.id);
-    expect(JSON.parse(tool.content)).toEqual({ ok: false, error: LOCK, code: LOCK });
+    expect(JSON.parse(tool.content).code).toBe("sql_write_not_allowed");
     expect(accountExists("acc-ai-lock-auto")).toBe(false);
+  });
+
+  it("typed writes still hit the currency migration lock", async () => {
+    setSetting("ai_require_confirmation", "0");
+    const realFetch = globalThis.fetch;
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url, init) => {
+        if (!String(url).includes("/chat/completions")) return realFetch(url, init);
+        calls += 1;
+        if (calls === 1) {
+          return {
+            ok: true,
+            json: async () => ({
+              choices: [
+                {
+                  message: {
+                    tool_calls: [
+                      {
+                        id: "call-typed-lock",
+                        type: "function",
+                        function: {
+                          name: "create_account",
+                          arguments: JSON.stringify({
+                            name: "AI锁类型化",
+                            type: "cash",
+                            currencyCode: "CNY",
+                            startingBalanceMinor: 0,
+                          }),
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ choices: [{ message: { content: "已处理" } }] }) };
+      })
+    );
+    const session = createSession("typed-lock");
+    appendUserMessage(session.id, "新建账户");
+    await runAgent(session.id);
+    const tool = db
+      .prepare("SELECT content FROM chat_messages WHERE session_id=? AND role='tool' ORDER BY rowid DESC LIMIT 1")
+      .get(session.id);
+    expect(JSON.parse(tool.content)).toEqual({ ok: false, error: LOCK, code: LOCK });
+    expect(db.prepare("SELECT id FROM accounts WHERE name='AI锁类型化'").get()).toBeFalsy();
   });
 
   it("rejecting a pending write and running SELECT still work", async () => {

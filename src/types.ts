@@ -324,7 +324,14 @@ export interface ChatMsg {
   content: string;
   toolCalls: ChatToolCall[] | null;
   toolCallId: string | null;
-  pending: { sql: string; purpose: string | null; index: number } | null;
+  pending: {
+    sql: string | null;
+    purpose: string | null;
+    index: number;
+    tool?: string | null;
+    args?: Record<string, unknown> | null;
+    summary?: string | null;
+  } | null;
   proposedSql: string | null;
   resolved: boolean;
   createdAt: string;

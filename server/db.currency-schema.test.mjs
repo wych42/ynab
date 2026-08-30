@@ -101,7 +101,7 @@ function ledgerCodes(database) {
 }
 
 describe("migration versions", () => {
-  it("only appends version 10 and keeps published migration names", () => {
+  it("only appends version 11 and keeps published migration names", () => {
     expect(migrations.map((m) => [m.version, m.name])).toEqual([
       [1, "baseline-schema"],
       [2, "default-created-at"],
@@ -113,6 +113,7 @@ describe("migration versions", () => {
       [8, "chat-reasoning-content"],
       [9, "chat-images"],
       [10, "compatible-currency-schema"],
+      [11, "chat-pending-typed-tools"],
     ]);
   });
 });

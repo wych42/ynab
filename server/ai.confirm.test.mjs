@@ -8,14 +8,13 @@ process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ynab-confirm-test-
 
 const { db, setSetting, uid } = await import("./db.mjs");
 
-// 配置假 AI，使确认后的 agent 续跑不抛 AI_NOT_CONFIGURED
 setSetting("ai_key", "test-key");
 setSetting("ai_base_url", "http://mock.local/v1");
 setSetting("ai_model", "test-model");
 
 const { createSession, appendUserMessage, confirmPending, runAgent } = await import("./ai.mjs");
 
-function seedPending(sessionId, sql) {
+function seedLegacySqlPending(sessionId, sql) {
   db.prepare(
     "INSERT INTO chat_messages(id,session_id,role,content,tool_calls,tool_call_id,pending_sql,pending_purpose,pending_index,resolved,created_at) VALUES(?,?,?,?,?,?,?,?,0,?,?)"
   ).run(
@@ -34,7 +33,12 @@ function seedPending(sessionId, sql) {
 
 function lastPendingRow(sessionId) {
   return db
-    .prepare("SELECT * FROM chat_messages WHERE session_id=? AND resolved=0 AND pending_sql IS NOT NULL ORDER BY rowid DESC LIMIT 1")
+    .prepare(
+      `SELECT * FROM chat_messages
+       WHERE session_id=? AND resolved=0
+         AND (pending_tool IS NOT NULL OR pending_sql IS NOT NULL)
+       ORDER BY rowid DESC LIMIT 1`
+    )
     .get(sessionId);
 }
 
@@ -46,52 +50,137 @@ describe("confirmPending 返回 changed 标记", () => {
   it("批准且写入成功 → changed=true，数据落库，LLM 续跑汇报结果", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: "已完成" } }] }),
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: "已完成",
+              tool_calls: [
+                {
+                  id: "call-c1",
+                  type: "function",
+                  function: {
+                    name: "create_account",
+                    arguments: JSON.stringify({
+                      name: "中信银行信用卡",
+                      type: "creditCard",
+                      currencyCode: "CNY",
+                      startingBalanceMinor: 0,
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
     }));
     vi.stubGlobal("fetch", fetchMock);
 
     const s = createSession("c1");
     appendUserMessage(s.id, "新建信用卡账户");
-    seedPending(s.id, "INSERT INTO accounts(id,name,type) VALUES('acc-c1','中信银行信用卡','creditCard')");
-    expect(lastPendingRow(s.id)).toBeTruthy();
+    const first = await runAgent(s.id);
+    expect(first.status).toBe("awaiting_confirmation");
+    expect(lastPendingRow(s.id)?.pending_tool).toBe("create_account");
 
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "已完成" } }] }) }))
+    );
     const res = await confirmPending(s.id, true);
 
     expect(res.changed).toBe(true);
-    expect(db.prepare("SELECT name FROM accounts WHERE id='acc-c1'").get()?.name).toBe("中信银行信用卡");
-    expect(fetchMock).toHaveBeenCalled();
+    expect(db.prepare("SELECT name, type, currency_code FROM accounts WHERE name='中信银行信用卡'").get()).toEqual({
+      name: "中信银行信用卡",
+      type: "creditCard",
+      currency_code: "CNY",
+    });
   });
 
   it("拒绝 → changed=false，不产生任何写入也不调用 LLM", async () => {
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              tool_calls: [
+                {
+                  id: "call-c2",
+                  type: "function",
+                  function: {
+                    name: "create_account",
+                    arguments: JSON.stringify({
+                      name: "应被取消的账户",
+                      type: "checking",
+                      currencyCode: "USD",
+                      startingBalanceMinor: 0,
+                    }),
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    }));
     vi.stubGlobal("fetch", fetchMock);
 
     const s = createSession("c2");
-    appendUserMessage(s.id, "帮我删掉点什么");
-    seedPending(s.id, "DELETE FROM accounts WHERE id='acc-c1'");
+    appendUserMessage(s.id, "帮我新建账户");
+    await runAgent(s.id);
     expect(lastPendingRow(s.id)).toBeTruthy();
 
+    const noop = vi.fn();
+    vi.stubGlobal("fetch", noop);
     const res = await confirmPending(s.id, false);
 
     expect(res.changed).toBe(false);
-    expect(db.prepare("SELECT id FROM accounts WHERE id='acc-c1'").get()).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT id FROM accounts WHERE name='应被取消的账户'").get()).toBeFalsy();
+    expect(noop).not.toHaveBeenCalled();
   });
 
-  it("批准但 SQL 执行失败 → changed=false", async () => {
+  it("批准但业务校验失败 → changed=false", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "嗯" } }] }) }))
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                tool_calls: [
+                  {
+                    id: "call-c3",
+                    type: "function",
+                    function: {
+                      name: "post_transaction",
+                      arguments: JSON.stringify({
+                        accountId: "no-such-account",
+                        date: "2026-08-26",
+                        amountMinor: 100,
+                      }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      }))
     );
 
     const s = createSession("c3");
     appendUserMessage(s.id, "记一笔");
-    seedPending(s.id, "INSERT INTO transactions(id,account_id,date,amount) VALUES('tx-bad','no-such-account','2026-08-26',100)");
-
+    await runAgent(s.id);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "嗯" } }] }) }))
+    );
     const res = await confirmPending(s.id, true);
 
     expect(res.changed).toBe(false);
-    expect(db.prepare("SELECT id FROM transactions WHERE id='tx-bad'").get()).toBeFalsy();
+    expect(db.prepare("SELECT COUNT(*) c FROM transactions WHERE account_id='no-such-account'").get().c).toBe(0);
   });
 
   it("没有待确认项 → changed=false", async () => {
@@ -99,6 +188,23 @@ describe("confirmPending 返回 changed 标记", () => {
     const s = createSession("c4");
     const res = await confirmPending(s.id, true);
     expect(res.changed).toBe(false);
+  });
+
+  it("升级前遗留的 pending_sql 写入批准时返回 sql_write_not_allowed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: "嗯" } }] }) }))
+    );
+    const s = createSession("c-legacy");
+    appendUserMessage(s.id, "旧 SQL");
+    seedLegacySqlPending(s.id, "INSERT INTO accounts(id,name,type) VALUES('acc-c1','中信银行信用卡','creditCard')");
+    const res = await confirmPending(s.id, true);
+    expect(res.changed).toBe(false);
+    const tool = db
+      .prepare("SELECT content FROM chat_messages WHERE session_id=? AND role='tool' ORDER BY rowid DESC LIMIT 1")
+      .get(s.id);
+    expect(JSON.parse(tool.content).code).toBe("sql_write_not_allowed");
+    expect(db.prepare("SELECT id FROM accounts WHERE id='acc-c1'").get()).toBeFalsy();
   });
 
   it("思考模型的 reasoning_content 会被持久化，供续跑回传", async () => {
@@ -117,8 +223,13 @@ describe("confirmPending 返回 changed 标记", () => {
                     id: "call-r",
                     type: "function",
                     function: {
-                      name: "run_sql",
-                      arguments: JSON.stringify({ sql: "INSERT INTO accounts(id,name,type,on_budget) VALUES('acc-x','房贷','personalLoan',0)" }),
+                      name: "create_account",
+                      arguments: JSON.stringify({
+                        name: "房贷",
+                        type: "personalLoan",
+                        currencyCode: "CNY",
+                        startingBalanceMinor: 0,
+                      }),
                     },
                   },
                 ],

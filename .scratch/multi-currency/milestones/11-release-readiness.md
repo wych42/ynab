@@ -2,7 +2,7 @@
 
 > Milestone：11
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：让 AI 和 IM 使用类型化财务工具
 >

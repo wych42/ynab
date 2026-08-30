@@ -153,7 +153,7 @@ describe("buildLlmMessages：tool_calls 历史必须完整配对", () => {
 
 describe("splitToolPlans：写调用不得进入已执行可见列表", () => {
   const readCls = { kind: "read", sql: "SELECT 1" };
-  const writeCls = { kind: "write", sql: "INSERT INTO accounts(name) VALUES('x')" };
+  const writeCls = { kind: "write", tool: "create_account" };
 
   it("首个 write 之前的 reads 可执行；write 成为独立待确认计划且不出现在 visibleCalls 中", () => {
     const plans = [

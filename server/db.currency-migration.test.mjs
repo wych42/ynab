@@ -25,6 +25,8 @@ import { startTestApi } from "./test-support/http.mjs";
 import { MoneyError } from "./money.mjs";
 import { migrations } from "./migrations.mjs";
 
+const SCHEMA_VERSION = Math.max(...migrations.map((m) => m.version));
+
 process.env.DATA_DIR = makeTempDataDir("ynab-currency-migration-http-");
 
 const { db, openBudgetDatabase, DATA_DIR, setSetting } = await import("./db.mjs");
@@ -338,7 +340,7 @@ describe("confirm route failure contracts", () => {
       expect(r.json.error).toBe("currency_migration_failed");
       expect(r.json.message).toBe("currency migration failed after backup");
       expect(JSON.stringify(r.json)).not.toMatch(/controlled mid-migration failure/);
-      expect(r.json.backup.fileName).toMatch(/^budget-pre-currency-v10-/);
+      expect(r.json.backup.fileName).toMatch(new RegExp(`^budget-pre-currency-v${SCHEMA_VERSION}-`));
       expect(r.json.backup.filePath).toBe(
         path.join(DATA_DIR, CURRENCY_MIGRATION_BACKUP_DIR_NAME, r.json.backup.fileName)
       );
@@ -427,7 +429,7 @@ describe("legacy two-decimal confirm matrix", () => {
       expect(result.alreadyCompleted).toBe(false);
       expect(result.currencyCode).toBe(currencyCode);
       expect(result.reportingCurrency).toBe(currencyCode);
-      expect(result.backup.fileName).toMatch(/^budget-pre-currency-v10-20260831-153045\.sqlite$/);
+      expect(result.backup.fileName).toMatch(new RegExp(`^budget-pre-currency-v${SCHEMA_VERSION}-20260831-153045\\.sqlite$`));
       expect(result.backup.filePath).toBe(
         path.join(dataDir, CURRENCY_MIGRATION_BACKUP_DIR_NAME, result.backup.fileName)
       );
@@ -564,7 +566,7 @@ describe("atomicity and retry", () => {
       expect(thrown.code).toBe("currency_migration_failed");
       expect(thrown.message).toBe("currency migration failed after backup");
       expect(thrown.message).not.toMatch(/controlled mid-migration failure/);
-      expect(thrown.backup.fileName).toMatch(/^budget-pre-currency-v10-20260831-153045\.sqlite$/);
+      expect(thrown.backup.fileName).toMatch(new RegExp(`^budget-pre-currency-v${SCHEMA_VERSION}-20260831-153045\\.sqlite$`));
       expect(thrown.backup.filePath).toBe(
         path.join(dataDir, CURRENCY_MIGRATION_BACKUP_DIR_NAME, thrown.backup.fileName)
       );

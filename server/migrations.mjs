@@ -337,4 +337,15 @@ CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_date ON fx_rates(base_currency, quo
 `);
     },
   },
+  {
+    // Typed AI/IM writes: persist pending tool name + JSON args. Keep pending_sql
+    // so historical messages and leftover SQL confirmation rows remain readable.
+    version: 11,
+    name: "chat-pending-typed-tools",
+    up: (db) => {
+      const cols = db.pragma("table_info(chat_messages)").map((c) => c.name);
+      if (!cols.includes("pending_tool")) db.exec("ALTER TABLE chat_messages ADD COLUMN pending_tool TEXT");
+      if (!cols.includes("pending_args")) db.exec("ALTER TABLE chat_messages ADD COLUMN pending_args TEXT");
+    },
+  },
 ];
