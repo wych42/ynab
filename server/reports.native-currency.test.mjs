@@ -148,13 +148,14 @@ describe("native report is one currency only", () => {
     expect(report.accounts.map((account) => account.currencyCode).sort()).toEqual(["CNY", "CNY", "CNY"]);
     expect(report.accounts.some((account) => account.name.includes("SGD") || account.name.includes("投资"))).toBe(false);
     expect(report.totalAssets).toBe(10_000_000 + 200_000 - 80_000);
-    expect(report.totalLiabilities).toBe(-500_000);
-    expect(report.netWorthNow).toBe(report.totalAssets + report.totalLiabilities);
+    expect(report.totalLiabilities).toBe(500_000);
+    expect(report.netWorthNow).toBe(report.totalAssets - report.totalLiabilities);
 
     const point = report.netWorth.find((row) => row.month === MONTH);
     expect(point.assets).toBe(report.totalAssets);
     expect(point.liabilities).toBe(report.totalLiabilities);
     expect(point.net).toBe(report.netWorthNow);
+    expect(point.net).toBe(point.assets - point.liabilities);
     expect(report.ageOfMoney).toBe(ageOfMoney("CNY"));
 
     const sgdReport = buildNativeReport({ currencyCode: "SGD", months: 3 });
@@ -169,5 +170,21 @@ describe("native report is one currency only", () => {
     expect(usdReport.expense.find((row) => row.month === MONTH).value).toBe(0);
     expect(usdReport.accounts).toHaveLength(1);
     expect(usdReport.accounts[0].balance).toBe(1_050_000);
+  });
+
+  it("classifies a credit-card credit as an asset by balance sign, not account type", () => {
+    createAccount({
+      name: "卡内溢缴",
+      type: "creditCard",
+      currencyCode: "CNY",
+      startingBalance: 12_345,
+      startingDate: `${MONTH}-01`,
+    });
+    const report = buildNativeReport({ currencyCode: "CNY", months: 3 });
+    expect(report.totalAssets).toBe(12_345);
+    expect(report.totalLiabilities).toBe(0);
+    expect(report.netWorthNow).toBe(12_345);
+    const point = report.netWorth.find((row) => row.month === MONTH);
+    expect(point).toMatchObject({ assets: 12_345, liabilities: 0, net: 12_345 });
   });
 });

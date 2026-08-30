@@ -1,6 +1,7 @@
 import type {
   Bootstrap,
   BudgetData,
+  NetWorthReport,
   ReportsData,
   Tx,
   Account,
@@ -226,6 +227,14 @@ export const api = {
     req<ReportsData>(`/api/reports/overview?months=${months}&currency=${encodeURIComponent(currency)}`),
   nativeReport: (currency: string, months = 12) =>
     req<ReportsData>(`/api/reports/native?currency=${encodeURIComponent(currency)}&months=${months}`),
+  netWorthReport: (params: { reportingCurrency: string; months: number; asOf: string }) => {
+    const q = new URLSearchParams({
+      reportingCurrency: params.reportingCurrency,
+      months: String(params.months),
+      asOf: params.asOf,
+    });
+    return req<NetWorthReport>(`/api/reports/net-worth?${q.toString()}`);
+  },
 
   getFxStatus: () => req<FxStatus>("/api/fx/status"),
   syncFxRates: (body?: { fromDate?: string; toDate?: string }) =>

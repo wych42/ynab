@@ -92,9 +92,9 @@
 | 币种预算隔离 | `server/engine.currency-budget.test.mjs`、`server/routes.currency-budget.test.mjs` | 已完成 | targeted 41 tests；CNY 与 SGD 隔离、家庭 CNY 合并、信用卡虚拟分类和复合主键通过 |
 | Currency Ledger Module | `server/currency-ledger.test.mjs` | 已完成 | Module 27 tests；合并 Route 与页面后 targeted 85 tests；全量 469 tests；双腿、RTA、原子回滚、分类保护和安全整数通过 |
 | FX Module 与 Provider | `server/fx.test.mjs`、`server/fx.provider-contract.test.mjs`、`server/routes.fx.test.mjs`、`src/pages/SettingsPage.fx.test.tsx` | 已完成 | Node 20；验收修正后 targeted 76 tests；全量 60 files、521 tests；网络错误归一化、空刷新失败、缓存边界校验和 DELETE 同级校验通过 |
-| 原币报表与统一净资产 | `server/reports.native-currency.test.mjs`，后续补统一净资产测试 | 部分完成 | 原币报表已隔离币种，并排除转账、期初行和估值调整；统一净资产等待 FX Module |
-| HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 部分完成 | 预算、原币报表、跨币种转账和 FX Route 通过；统一净资产接口待后续里程碑 |
-| React 页面 | 现有页面测试及新增币种页面测试 | 部分完成 | Budget、原币 Reports、交易页、账户交易页和 Settings 汇率区通过；已覆盖币种显示、原始金额、跨币种转账表单、人工汇率和 JPY 精度。统一净资产与投资页面待后续里程碑 |
+| 原币报表与统一净资产 | `server/reports.native-currency.test.mjs`、`server/reports.currency.test.mjs` | 已完成 | targeted 23 tests；全量 540 tests；家庭手算、按账户舍入、余额符号、历史月末、来源元数据、开始日期、缺率和 memoization 通过 |
+| HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 部分完成 | 预算、原币报表、统一净资产、跨币种转账和 FX Route 通过；投资专属接口等待后续里程碑 |
+| React 页面 | 现有页面测试及新增币种页面测试 | 部分完成 | Budget、原币收支、统一净资产、交易页、账户交易页和 Settings 汇率区通过；已覆盖缺率隐藏总数、历史缺口、stale response、跨币种转账和 JPY 精度。投资页面待后续里程碑 |
 | AI 与 IM 写入 | `server/ai.currency-tools.test.mjs` 及现有 IM 测试 | 未开始 | 类型化工具、确认和 SQL 保护结果 |
 | 生产库副本演练 | 本文件的迁移验收清单 | 未开始 | 脱敏核对表、备份与恢复记录 |
 | 浏览器手工验收 | 本文件的家庭使用场景 | 未开始 | 逐项勾选记录与截图 |

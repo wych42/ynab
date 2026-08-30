@@ -70,11 +70,11 @@ const native: ReportsData = {
   netWorth: [
     { month: "2026-06", assets: 100_000, liabilities: 0, net: 100_000 },
     { month: "2026-07", assets: 100_000, liabilities: 0, net: 100_000 },
-    { month: "2026-08", assets: 10_120_000, liabilities: -500_000, net: 9_620_000 },
+    { month: "2026-08", assets: 10_120_000, liabilities: 500_000, net: 9_620_000 },
   ],
   accounts: [],
   totalAssets: 10_120_000,
-  totalLiabilities: -500_000,
+  totalLiabilities: 500_000,
   netWorthNow: 9_620_000,
   breakdown: [{ name: "餐饮", value: 80_000 }],
   topPayees: [{ name: "盒马", value: 80_000 }],

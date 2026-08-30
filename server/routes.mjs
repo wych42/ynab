@@ -89,6 +89,7 @@ import {
   updateTransaction,
 } from "./currency-ledger.mjs";
 import { createFxModule, isFxError, FxProviderError } from "./fx.mjs";
+import { createReportsModule, isReportsError } from "./reports.mjs";
 
 export const api = express.Router();
 
@@ -115,11 +116,19 @@ function requestCurrency(req) {
 }
 
 const fxModule = createFxModule({ db, today: todayYmd, nowIso });
+const reportsModule = createReportsModule({ db, fx: fxModule });
 
 function sendFxError(res, error) {
   if (!isFxError(error)) throw error;
   const provider = error instanceof FxProviderError || String(error.code || "").startsWith("fx_provider_");
   return res.status(provider ? 502 : 400).json({ error: error.code, code: error.code, message: error.message });
+}
+
+function sendReportsError(res, error) {
+  if (isReportsError(error) || isAccountCurrencyError(error)) {
+    return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  throw error;
 }
 
 function assertAssignmentTarget(categoryId, currencyCode) {
@@ -1198,6 +1207,19 @@ api.get("/reports/native", (req, res) => {
     res.json(buildNativeReport({ currencyCode, months: n }));
   } catch (e) {
     return sendAccountCurrencyError(res, e);
+  }
+});
+
+api.get("/reports/net-worth", async (req, res) => {
+  try {
+    const report = await reportsModule.buildNetWorthReport({
+      reportingCurrency: req.query.reportingCurrency,
+      asOf: req.query.asOf,
+      months: req.query.months,
+    });
+    res.json(report);
+  } catch (e) {
+    return sendReportsError(res, e);
   }
 });
 

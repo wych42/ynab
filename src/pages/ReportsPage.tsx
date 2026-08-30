@@ -18,30 +18,126 @@ import { Hourglass, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
 import { fmtMoney, fmtMonthShort, localeForLang } from "../format";
-import type { ReportsData } from "../types";
+import type { NetWorthReport, ReportsData } from "../types";
 import { Spinner } from "../components/ui";
 
 const PALETTE = ["#6a63f0", "#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#8b5cf6", "#ec4899", "#84cc16", "#14b8a6", "#f97316"];
 
+type ReportView = "native" | "netWorth";
+
+function todayYmd(timeZone?: string | null) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: timeZone || "UTC",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // fall through to UTC
+  }
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function ReportsPage() {
-  const { lang, t, activeCurrency } = useApp();
-  const [data, setData] = useState<ReportsData | null>(null);
+  const { lang, t, activeCurrency, boot } = useApp();
+  const [view, setView] = useState<ReportView>("native");
+  const [nativeData, setNativeData] = useState<ReportsData | null>(null);
+  const [netWorthData, setNetWorthData] = useState<NetWorthReport | null>(null);
   const requestGen = useRef(0);
+  const reportingCurrency = boot?.settings.reportingCurrency ?? null;
+  const timezone = boot?.settings.timezone ?? null;
 
   useEffect(() => {
     const gen = ++requestGen.current;
-    setData(null);
-    if (!activeCurrency) return;
-    const requested = activeCurrency;
-    api.nativeReport(requested, 12).then((report) => {
-      if (requestGen.current !== gen) return;
-      if (report.currencyCode !== requested) return;
-      setData(report);
-    }).catch(() => {});
-  }, [activeCurrency]);
+    setNativeData(null);
+    setNetWorthData(null);
+    if (view === "native") {
+      if (!activeCurrency) return;
+      const requested = activeCurrency;
+      api
+        .nativeReport(requested, 12)
+        .then((report) => {
+          if (requestGen.current !== gen) return;
+          if (report.currencyCode !== requested) return;
+          setNativeData(report);
+        })
+        .catch(() => {});
+      return;
+    }
+    if (!reportingCurrency) return;
+    const requested = reportingCurrency;
+    const asOf = todayYmd(timezone);
+    api
+      .netWorthReport({ reportingCurrency: requested, months: 12, asOf })
+      .then((report) => {
+        if (requestGen.current !== gen) return;
+        if (report.reportingCurrency !== requested) return;
+        setNetWorthData(report);
+      })
+      .catch(() => {});
+  }, [view, activeCurrency, reportingCurrency, timezone]);
 
-  if (!activeCurrency || !data || data.currencyCode !== activeCurrency) return <Spinner />;
+  const nativeReady = view === "native" && !!activeCurrency && !!nativeData && nativeData.currencyCode === activeCurrency;
+  const netWorthReady =
+    view === "netWorth" &&
+    !!reportingCurrency &&
+    !!netWorthData &&
+    netWorthData.reportingCurrency === reportingCurrency;
 
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-xl font-bold text-slate-900">{t("nav_reports")}</h1>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          <div className="flex rounded-lg bg-slate-100 p-0.5">
+            <button
+              type="button"
+              className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${
+                view === "native" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+              }`}
+              onClick={() => setView("native")}
+            >
+              {t("rep_nativeView")}
+            </button>
+            <button
+              type="button"
+              className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${
+                view === "netWorth" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
+              }`}
+              onClick={() => setView("netWorth")}
+            >
+              {t("rep_netWorthView")}
+            </button>
+          </div>
+          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
+            {view === "native" ? activeCurrency : reportingCurrency}
+          </span>
+          <span>{t("rep_months", { n: 12 })}</span>
+        </div>
+      </div>
+
+      {view === "native" ? (
+        nativeReady && nativeData ? (
+          <NativeReportView data={nativeData} />
+        ) : (
+          <Spinner />
+        )
+      ) : netWorthReady && netWorthData ? (
+        <NetWorthReportView data={netWorthData} />
+      ) : (
+        <Spinner />
+      )}
+    </div>
+  );
+}
+
+function NativeReportView({ data }: { data: ReportsData }) {
+  const { lang, t } = useApp();
   const currency = data.currencyCode;
   const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
 
@@ -61,17 +157,9 @@ export function ReportsPage() {
   const cur = data.income[data.income.length - 1];
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">{t("nav_reports")}</h1>
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">{currency}</span>
-          <span>{t("rep_months", { n: 12 })}</span>
-        </div>
-      </div>
+    <>
       <p className="mb-4 text-xs text-slate-400">{t("rep_nativeHint")}</p>
 
-      {/* Stat cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -108,7 +196,6 @@ export function ReportsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {/* Net worth */}
         <Card title={t("rep_netWorth")}>
           <ResponsiveContainer width="100%" height={260}>
             <AreaChart data={nw} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
@@ -128,7 +215,6 @@ export function ReportsPage() {
           </ResponsiveContainer>
         </Card>
 
-        {/* Income vs Expense */}
         <Card title={t("rep_incomeExpense")}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={ie} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={3}>
@@ -144,7 +230,6 @@ export function ReportsPage() {
           </ResponsiveContainer>
         </Card>
 
-        {/* Breakdown donut */}
         <Card title={t("rep_breakdown")}>
           {pie.length === 0 ? (
             <EmptyChart />
@@ -176,7 +261,6 @@ export function ReportsPage() {
           )}
         </Card>
 
-        {/* Top payees */}
         <Card title={t("rep_topPayees")}>
           {data.topPayees.length === 0 ? (
             <EmptyChart />
@@ -202,7 +286,6 @@ export function ReportsPage() {
           )}
         </Card>
 
-        {/* Income sources */}
         <Card title={t("rep_incomeSources")}>
           {data.incomeSources.length === 0 ? (
             <EmptyChart />
@@ -228,7 +311,150 @@ export function ReportsPage() {
           )}
         </Card>
       </div>
-    </div>
+    </>
+  );
+}
+
+function NetWorthReportView({ data }: { data: NetWorthReport }) {
+  const { lang, t } = useApp();
+  const currency = data.reportingCurrency;
+  const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
+  const nativeMoney = (amount: number, code: string) =>
+    fmtMoney(amount, { currencyCode: code, locale: localeForLang(lang) });
+  const history = data.history.map((point) => ({
+    month: point.month,
+    label: fmtMonthShort(point.month, lang),
+    net: point.complete ? point.netWorthMinor : null,
+  }));
+  const historyMissing = data.history.flatMap((point) =>
+    point.complete
+      ? []
+      : point.missing.map((row) => ({
+          from: row.base,
+          to: row.quote,
+          date: point.asOf,
+        })),
+  );
+
+  return (
+    <>
+      <p className="mb-4 text-xs text-slate-400">
+        {t("rep_netWorthHint")} {t("rep_asOf", { date: data.asOf })}
+      </p>
+
+      {data.complete ? (
+        <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <Scale size={13} /> {t("rep_now")}
+            </div>
+            <div className={`num mt-2 text-2xl font-bold ${data.netWorthMinor < 0 ? "text-rose-600" : "text-slate-900"}`}>
+              {money(data.netWorthMinor)}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-emerald-600">
+              <TrendingUp size={13} /> {t("rep_assets")}
+            </div>
+            <div className="num mt-2 text-2xl font-bold text-emerald-700">{money(data.totalAssetsMinor)}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-rose-500">
+              <TrendingDown size={13} /> {t("rep_liabilities")}
+            </div>
+            <div className="num mt-2 text-2xl font-bold text-rose-600">{money(data.totalLiabilitiesMinor)}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-900">{t("rep_incomplete")}</p>
+          <p className="mt-2 text-xs font-bold uppercase tracking-wider text-amber-700">{t("rep_missingRates")}</p>
+          <ul className="mt-2 space-y-1 text-sm text-amber-900">
+            {data.missing.map((row) => (
+              <li key={`${row.base}-${row.quote}-${row.requestedDate}`}>
+                {t("rep_missingPair", { from: row.base, to: row.quote })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {historyMissing.length > 0 ? (
+        <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+          <p className="text-sm font-semibold text-amber-900">{t("rep_historyMissing")}</p>
+          <ul className="mt-2 space-y-1 text-sm text-amber-900">
+            {historyMissing.map((row) => (
+              <li key={`${row.from}-${row.to}-${row.date}`}>
+                {t("rep_historyMissingPair", { from: row.from, to: row.to, date: row.date })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {history.length > 0 ? (
+        <div className="mb-5">
+          <Card title={t("rep_netWorth")}>
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="nwFxFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6a63f0" stopOpacity={0.28} />
+                    <stop offset="100%" stopColor="#6a63f0" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef1f6" />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
+                <YAxis
+                  tick={{ fontSize: 11, fill: "#94a3b8" }}
+                  axisLine={false}
+                  tickLine={false}
+                  width={70}
+                  tickFormatter={(v: number) => money(v)}
+                />
+                <Tooltip content={<MoneyTooltip currency={currency} lang={lang} />} cursor={{ stroke: "#c7d2fe" }} />
+                <Area type="monotone" dataKey="net" stroke="#6a63f0" strokeWidth={2.5} fill="url(#nwFxFill)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </Card>
+        </div>
+      ) : null}
+
+      <Card title={t("rep_accountsDetail")}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-left text-[13px]">
+            <thead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              <tr>
+                <th className="pb-2 pr-3 font-bold">{t("account_name")}</th>
+                <th className="pb-2 pr-3 font-bold">{t("account_currency")}</th>
+                <th className="pb-2 pr-3 text-right font-bold">{t("rep_nativeBalance")}</th>
+                <th className="pb-2 pr-3 text-right font-bold">{t("rep_convertedBalance")}</th>
+                <th className="pb-2 pr-3 font-bold">{t("rep_rateDate")}</th>
+                <th className="pb-2 pr-3 font-bold">{t("rep_rateSource")}</th>
+                <th className="pb-2 text-right font-bold">{t("rep_rate")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.accounts.map((row) => (
+                <tr key={row.id} className="border-t border-slate-100">
+                  <td className="py-2 pr-3 font-medium text-slate-700">{row.name}</td>
+                  <td className="py-2 pr-3 text-slate-500">{row.currencyCode}</td>
+                  <td className="num py-2 pr-3 text-right text-slate-700">
+                    {nativeMoney(row.nativeBalanceMinor, row.currencyCode)}
+                  </td>
+                  <td className="num py-2 pr-3 text-right text-slate-700">
+                    {row.convertedBalanceMinor == null ? t("rep_convertedNone") : money(row.convertedBalanceMinor)}
+                  </td>
+                  <td className="py-2 pr-3 text-slate-500">{row.fx?.rateDate ?? t("rep_convertedNone")}</td>
+                  <td className="py-2 pr-3 text-slate-500">{row.fx?.source ?? t("rep_convertedNone")}</td>
+                  <td className="num py-2 text-right text-slate-500">{row.fx?.rate ?? t("rep_convertedNone")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </>
   );
 }
 

@@ -268,7 +268,11 @@ export function ageOfMoney(currencyCode) {
   return Math.max(daysBetween(queue[0].date, todayYmd()), 0);
 }
 
-const LIABILITY_TYPES = ["creditCard", "lineOfCredit", "studentLoan", "personalLoan", "otherLiability"];
+function classifySignedBalance(balance) {
+  if (balance > 0) return { assets: balance, liabilities: 0 };
+  if (balance < 0) return { assets: 0, liabilities: -balance };
+  return { assets: 0, liabilities: 0 };
+}
 
 export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {}) {
   const code = requireCurrency(currencyCode);
@@ -283,9 +287,9 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
   let liabilities = 0;
   const accountList = accts.map((a) => {
     const b = balById.get(a.id) || 0;
-    const isLiab = LIABILITY_TYPES.includes(a.type);
-    if (isLiab) liabilities += b;
-    else assets += b;
+    const part = classifySignedBalance(b);
+    assets += part.assets;
+    liabilities += part.liabilities;
     return presentAccount(a, { balance: b });
   });
 
@@ -329,11 +333,11 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
     for (const acc of accts) {
       let b = acc.starting_balance;
       b += txRows.reduce((s, t) => (t.account_id === acc.id && t.date <= eom && !t.is_start ? s + t.amount : s), 0);
-      const isLiab = LIABILITY_TYPES.includes(acc.type);
-      if (b >= 0) a += b;
-      else l += b;
+      const part = classifySignedBalance(b);
+      a += part.assets;
+      l += part.liabilities;
     }
-    netWorth.push({ month: m, assets: a, liabilities: l, net: a + l });
+    netWorth.push({ month: m, assets: a, liabilities: l, net: a - l });
   }
 
   const firstM = months[0];
@@ -363,7 +367,7 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
     accounts: accountList,
     totalAssets: assets,
     totalLiabilities: liabilities,
-    netWorthNow: assets + liabilities,
+    netWorthNow: assets - liabilities,
     breakdown: [...breakdown.entries()]
       .map(([id, value]) => ({ name: catNames.get(id) || id, value }))
       .sort((x, y) => y.value - x.value)

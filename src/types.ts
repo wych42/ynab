@@ -211,6 +211,78 @@ export interface ReportsData {
   ageOfMoney: number;
 }
 
+export type NetWorthFxMeta = {
+  from: string;
+  to: string;
+  asOfDate: string;
+  rateDate: string;
+  source: string;
+  path: string;
+  rate: string;
+};
+
+export type NetWorthMissingRate = {
+  base: string;
+  quote: string;
+  requestedDate: string;
+  reason: string;
+};
+
+export type NetWorthAccountRow = {
+  id: string;
+  name: string;
+  type: string;
+  currencyCode: string;
+  nativeBalanceMinor: number;
+  convertedBalanceMinor: number | null;
+  fx: NetWorthFxMeta | null;
+};
+
+export type NetWorthHistoryPoint =
+  | {
+      month: string;
+      asOf: string;
+      complete: true;
+      totalAssetsMinor: number;
+      totalLiabilitiesMinor: number;
+      netWorthMinor: number;
+      missing: NetWorthMissingRate[];
+      rates: NetWorthFxMeta[];
+    }
+  | {
+      month: string;
+      asOf: string;
+      complete: false;
+      totalAssetsMinor: null;
+      totalLiabilitiesMinor: null;
+      netWorthMinor: null;
+      missing: NetWorthMissingRate[];
+      rates: NetWorthFxMeta[];
+    };
+
+type NetWorthReportBase = {
+  reportingCurrency: string;
+  asOf: string;
+  months: number;
+  accounts: NetWorthAccountRow[];
+  history: NetWorthHistoryPoint[];
+  missing: NetWorthMissingRate[];
+};
+
+export type NetWorthReport =
+  | (NetWorthReportBase & {
+      complete: true;
+      totalAssetsMinor: number;
+      totalLiabilitiesMinor: number;
+      netWorthMinor: number;
+    })
+  | (NetWorthReportBase & {
+      complete: false;
+      totalAssetsMinor: null;
+      totalLiabilitiesMinor: null;
+      netWorthMinor: null;
+    });
+
 export interface ChatSession {
   id: string;
   title: string;

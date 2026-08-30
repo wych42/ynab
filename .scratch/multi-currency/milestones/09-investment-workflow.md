@@ -2,7 +2,7 @@
 
 > Milestone：09
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：交付当前和历史统一净资产
 >
