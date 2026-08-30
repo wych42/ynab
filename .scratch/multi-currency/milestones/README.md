@@ -21,8 +21,8 @@
 | [统一金额和币种目录](./01-money-foundation.md) | Money Module 和单一币种目录 | implemented | 共享目录；targeted 68 tests；全量 316 tests；typecheck 和 build 通过 |
 | [加入兼容的多币种 Schema](./02-compatible-schema.md) | 新表、新字段和迁移锁 | implemented | targeted 21 tests；全量 337 tests；普通 Route 与 AI/IM 写锁通过 |
 | [完成旧账本迁移](./03-legacy-migration.md) | 备份、确认、缩放和迁移页 | implemented | targeted 32 tests；全量 369 tests；备份、恢复、原子回滚和页面提示通过 |
-| [让账户明确携带币种](./04-account-currency.md) | 账户币种、账本启用和汇总币种设置 | ready-for-agent | 旧账本迁移已完成 |
-| [隔离各币种预算](./05-budget-isolation.md) | 分配、目标、预算和原币收支隔离 | blocked | 等待账户币种 |
+| [让账户明确携带币种](./04-account-currency.md) | 账户币种、账本启用和汇总币种设置 | implemented | targeted 26 tests；全量 393 tests；创建回滚、设置和账户页面通过 |
+| [隔离各币种预算](./05-budget-isolation.md) | 分配、目标、预算和原币收支隔离 | ready-for-agent | 账户币种工作流已完成 |
 | [统一交易和换汇写入](./06-currency-ledger.md) | Currency Ledger Module 和跨币种转账 | blocked | 等待预算隔离 |
 | [建立可替换的汇率模块](./07-fx-module.md) | Provider、缓存、人工覆盖和离线行为 | blocked | 等待统一写入 |
 | [交付统一净资产报表](./08-reporting-net-worth.md) | 当前与历史净资产完整纵切 | blocked | 等待 FX Module |

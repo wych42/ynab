@@ -41,8 +41,16 @@ export function SettingsPage() {
   const { boot, lang, setLang, t, toast, refreshBoot } = useApp();
 
   /* ------------------------- 通用 ------------------------- */
-  const [symbol, setSymbol] = useState(boot?.settings.currencySymbol ?? "¥");
+  const [reportingCurrency, setReportingCurrency] = useState(boot?.settings.reportingCurrency ?? "");
+  const [addCurrency, setAddCurrency] = useState("");
   const [timezone, setTimezone] = useState(boot?.settings.timezone ?? "UTC");
+  const enabledCurrencies = boot?.enabledCurrencies ?? [];
+  const supportedCurrencies = boot?.supportedCurrencies ?? [];
+  const currenciesToAdd = supportedCurrencies.filter((currency) => !enabledCurrencies.includes(currency.code));
+
+  useEffect(() => {
+    setReportingCurrency(boot?.settings.reportingCurrency ?? "");
+  }, [boot?.settings.reportingCurrency]);
 
   // 时区选项：优先使用 Intl 提供的完整 IANA 列表，缺失时回落到常用时区
   const tzOptions = (() => {
@@ -78,7 +86,22 @@ export function SettingsPage() {
 
   const saveGeneral = async () => {
     try {
-      await api.saveSettings({ currencySymbol: symbol, timezone });
+      await api.saveSettings({
+        timezone,
+        ...(reportingCurrency ? { reportingCurrency } : {}),
+      });
+      await refreshBoot();
+      toast(t("settings_savedOk"));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t("common_error"), "err");
+    }
+  };
+
+  const enableSelectedCurrency = async () => {
+    if (!addCurrency) return;
+    try {
+      await api.saveSettings({ enableCurrency: addCurrency });
+      setAddCurrency("");
       await refreshBoot();
       toast(t("settings_savedOk"));
     } catch (e) {
@@ -239,14 +262,21 @@ export function SettingsPage() {
             </div>
           </div>
           <div>
-            <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_currencyLabel")}</span>
-            <div className="flex items-center gap-2">
-              <input
-                value={symbol}
-                onChange={(e) => setSymbol(e.target.value.slice(0, 3))}
-                className={`${inputCls} w-20 text-center`}
-              />
-            </div>
+            <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_reportingCurrency")}</span>
+            <select
+              aria-label={t("settings_reportingCurrency")}
+              value={reportingCurrency}
+              onChange={(e) => setReportingCurrency(e.target.value)}
+              className={`${inputCls} min-w-[140px]`}
+            >
+              {!reportingCurrency && <option value="">{t("settings_addCurrencyPlaceholder")}</option>}
+              {enabledCurrencies.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{t("settings_reportingHint")}</p>
           </div>
           <div>
             <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_timezone")}</span>
@@ -263,6 +293,39 @@ export function SettingsPage() {
           <div className="flex items-end">
             <Btn onClick={saveGeneral}>{t("common_save")}</Btn>
           </div>
+        </div>
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <p className="mb-2 text-xs font-medium text-slate-500">{t("settings_enabledCurrencies")}</p>
+          <ul data-testid="enabled-currencies" className="mb-3 flex flex-wrap gap-1.5">
+            {enabledCurrencies.map((code) => (
+              <li key={code} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-600">
+                {code}
+              </li>
+            ))}
+          </ul>
+          {currenciesToAdd.length > 0 && (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_addCurrency")}</span>
+                <select
+                  aria-label={t("settings_addCurrency")}
+                  value={addCurrency}
+                  onChange={(e) => setAddCurrency(e.target.value)}
+                  className={`${inputCls} min-w-[160px]`}
+                >
+                  <option value="">{t("settings_addCurrencyPlaceholder")}</option>
+                  {currenciesToAdd.map((currency) => (
+                    <option key={currency.code} value={currency.code}>
+                      {currency.code}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Btn aria-label={t("settings_addCurrencyConfirm")} onClick={enableSelectedCurrency} disabled={!addCurrency}>
+                {t("settings_addCurrencyConfirm")}
+              </Btn>
+            </div>
+          )}
         </div>
       </Card>
 

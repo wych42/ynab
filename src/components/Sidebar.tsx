@@ -16,7 +16,7 @@ import {
 import { useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { useApp } from "../store";
-import { fmtMoney } from "../format";
+import { formatAccountMoney, totalsByCurrency } from "../format";
 import type { Account } from "../types";
 import type { Lang } from "../i18n";
 
@@ -43,6 +43,7 @@ export function accountIcon(type: string): ComponentType<{ size?: number | strin
 }
 
 function AccountRow({ acc, onNavigate }: { acc: Account; onNavigate?: () => void }) {
+  const { lang } = useApp();
   const nameRef = useRef<HTMLSpanElement>(null);
   const [truncated, setTruncated] = useState(false);
 
@@ -69,7 +70,7 @@ function AccountRow({ acc, onNavigate }: { acc: Account; onNavigate?: () => void
         {acc.name}
       </span>
       <span className={`num text-xs ${acc.balance < 0 ? "text-rose-300" : "text-slate-400"} group-hover:text-slate-200`}>
-        {fmtMoney(acc.balance)}
+        {formatAccountMoney(acc.balance, acc.currencyCode, lang)}
       </span>
     </a>
   );
@@ -88,9 +89,10 @@ function Section({
   defaultOpen?: boolean;
   onNavigate?: () => void;
 }) {
+  const { lang } = useApp();
   const [open, setOpen] = useState(defaultOpen);
   if (!accounts.length) return null;
-  const total = accounts.reduce((s, a) => s + a.balance, 0);
+  const totals = totalsByCurrency(accounts);
   return (
     <div className="mb-4">
       <div className="flex items-center justify-between px-2.5">
@@ -121,9 +123,13 @@ function Section({
               <AccountRow key={a.id} acc={a} onNavigate={onNavigate} />
             ))}
           </div>
-          <div className="mt-1 flex items-center justify-between border-t border-white/[0.06] px-2.5 pt-1.5 text-[11px]">
-            <span className="text-slate-500">{label.includes("关闭") ? "" : "Total"}</span>
-            <span className="num font-medium text-slate-400">{fmtMoney(total)}</span>
+          <div className="mt-1 space-y-0.5 border-t border-white/[0.06] px-2.5 pt-1.5 text-[11px]">
+            {totals.map((row) => (
+              <div key={row.currencyCode} className="flex items-center justify-between">
+                <span className="text-slate-500">{row.currencyCode}</span>
+                <span className="num font-medium text-slate-400">{formatAccountMoney(row.total, row.currencyCode, lang)}</span>
+              </div>
+            ))}
           </div>
         </>
       )}

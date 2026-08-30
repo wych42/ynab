@@ -6,13 +6,20 @@ import {
   nowIso,
   getSetting,
   setSetting,
-  createAccount,
   loadDemoData,
   isCreditType,
   todayYmd,
   getTimezone,
   isValidTimezone,
 } from "./db.mjs";
+import {
+  applyCurrencySettings,
+  changeAccountCurrency,
+  createAccountRecord,
+  isAccountCurrencyError,
+  parseStartingBalanceMinor,
+  presentAccount,
+} from "./account-currency.mjs";
 import {
   computeBudget,
   listMonths,
@@ -69,6 +76,13 @@ import {
 export const api = express.Router();
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
+
+function sendAccountCurrencyError(res, error) {
+  if (isAccountCurrencyError(error)) {
+    return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  throw error;
+}
 
 function backupPayload(backup) {
   if (!backup || typeof backup.fileName !== "string" || typeof backup.filePath !== "string") return undefined;
@@ -253,6 +267,8 @@ api.put("/settings", (req, res) => {
     backupR2Prefix,
     backupR2AccessKeyId,
     backupR2SecretKey,
+    enableCurrency,
+    reportingCurrency,
   } = req.body || {};
 
   // cron 时间先校验后落库，非法值整体拒绝（"24:00" 前后都不允许）
@@ -264,6 +280,15 @@ api.put("/settings", (req, res) => {
     if (backupCronTime.trim() === "") cronNormalized = "";
     else if (!m || h > 23 || min > 59) return bad(res, "invalid cron time");
     else cronNormalized = `${String(h).padStart(2, "0")}:${m[2]}`;
+  }
+
+  try {
+    if (typeof enableCurrency === "string" || typeof reportingCurrency === "string") {
+      const apply = db.transaction(() => applyCurrencySettings(db, { enableCurrency, reportingCurrency }));
+      apply();
+    }
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
   }
 
   if (typeof currencySymbol === "string" && currencySymbol.length <= 4) setSetting("currency_symbol", currencySymbol);
@@ -548,7 +573,7 @@ function accountsWithBalances() {
   return db
     .prepare("SELECT * FROM accounts ORDER BY sort_order, created_at")
     .all()
-    .map((a) => ({ ...a, balance: balances.get(a.id) || 0 }));
+    .map((a) => presentAccount(a, { balance: balances.get(a.id) || 0 }));
 }
 
 function groupsWithCategories() {
@@ -745,27 +770,45 @@ api.get("/accounts", (req, res) => {
 });
 
 api.post("/accounts", (req, res) => {
-  const { name, type, startingBalance, startingDate } = req.body || {};
-  if (!name?.trim()) return bad(res, "name required");
-  if (!type) return bad(res, "type required");
-  const id = createAccount({
-    name: name.trim(),
-    type,
-    startingBalance: Number(startingBalance) || 0,
-    startingDate: startingDate || null,
-  });
-  res.json({ id, accounts: accountsWithBalances() });
+  const body = req.body || {};
+  if (!body.name?.trim()) return bad(res, "name required");
+  if (!body.type) return bad(res, "type required");
+  try {
+    const id = createAccountRecord(
+      db,
+      {
+        name: body.name,
+        type: body.type,
+        currencyCode: body.currencyCode,
+        startingBalanceMinor: parseStartingBalanceMinor(body),
+        startingDate: body.startingDate || todayYmd(),
+      },
+      { requireCurrency: true, uid, nowIso, todayYmd: todayYmd() }
+    );
+    res.json({ id, accounts: accountsWithBalances() });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.put("/accounts/:id", (req, res) => {
   const acc = db.prepare("SELECT * FROM accounts WHERE id=?").get(req.params.id);
   if (!acc) return bad(res, "not found");
-  const { name, closed } = req.body || {};
-  if (typeof name === "string" && name.trim()) db.prepare("UPDATE accounts SET name=? WHERE id=?").run(name.trim(), acc.id);
-  if (typeof closed === "boolean") {
-    const bal = accountsWithBalances().find((a) => a.id === acc.id)?.balance || 0;
-    if (closed && bal !== 0 && isCreditType(acc.type)) return bad(res, "balance must be zero");
-    db.prepare("UPDATE accounts SET closed=? WHERE id=?").run(closed ? 1 : 0, acc.id);
+  const { name, closed, currencyCode } = req.body || {};
+  try {
+    const apply = db.transaction(() => {
+      if (typeof currencyCode === "string") changeAccountCurrency(db, acc.id, currencyCode);
+      if (typeof name === "string" && name.trim()) db.prepare("UPDATE accounts SET name=? WHERE id=?").run(name.trim(), acc.id);
+      if (typeof closed === "boolean") {
+        const bal = accountsWithBalances().find((a) => a.id === acc.id)?.balance || 0;
+        if (closed && bal !== 0 && isCreditType(acc.type)) throw new Error("balance must be zero");
+        db.prepare("UPDATE accounts SET closed=? WHERE id=?").run(closed ? 1 : 0, acc.id);
+      }
+    });
+    apply();
+  } catch (e) {
+    if (e instanceof Error && e.message === "balance must be zero") return bad(res, e.message);
+    return sendAccountCurrencyError(res, e);
   }
   res.json({ accounts: accountsWithBalances() });
 });
@@ -797,7 +840,7 @@ api.get("/accounts/:id/transactions", (req, res) => {
     if (!r.is_start) running += r.amount;
     out.push({ ...transformTx(r), balance: running });
   }
-  res.json({ account: { ...acc, balance: running }, transactions: out.reverse() });
+  res.json({ account: presentAccount(acc, { balance: running }), transactions: out.reverse() });
 });
 
 function transformTx(r) {

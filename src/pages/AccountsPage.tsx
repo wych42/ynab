@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { ChevronRight, Plus } from "lucide-react";
 import { useApp } from "../store";
-import { fmtMoney, todayIso } from "../format";
+import { formatAccountMoney, groupAccountsByCurrency, todayIso } from "../format";
+import { parseAmountToMinor } from "../money";
 import { api } from "../api";
 import { Btn, Field, Modal, inputCls } from "../components/ui";
 import { accountIcon } from "../components/Sidebar";
-import type { Account } from "../types";
+import type { Account, Bootstrap } from "../types";
 
 export const ACCOUNT_TYPE_LABELS: Record<string, { zh: string; en: string; onBudget: number }> = {
   checking: { zh: "支票账户", en: "Checking", onBudget: 1 },
@@ -39,7 +40,7 @@ function AccountCard({ acc }: { acc: Account }) {
         <div className="text-[11px] text-slate-400">{label ? label[lang] : acc.type}</div>
       </div>
       <div className={`num text-[14px] font-bold ${acc.balance < 0 ? "text-rose-600" : "text-slate-700"}`}>
-        {fmtMoney(acc.balance)}
+        {formatAccountMoney(acc.balance, acc.currencyCode, lang)}
       </div>
       <ChevronRight size={15} className="text-slate-300 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-500" />
     </a>
@@ -47,21 +48,40 @@ function AccountCard({ acc }: { acc: Account }) {
 }
 
 function Section({ title, accounts }: { title: string; accounts: Account[] }) {
+  const { lang } = useApp();
   if (!accounts.length) return null;
-  const total = accounts.reduce((s, a) => s + a.balance, 0);
+  const groups = groupAccountsByCurrency(accounts);
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-baseline justify-between px-1">
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400">{title}</h2>
-        <span className={`num text-sm font-semibold ${total < 0 ? "text-rose-500" : "text-slate-500"}`}>{fmtMoney(total)}</span>
       </div>
-      <div className="space-y-2">
-        {accounts.map((a) => (
-          <AccountCard key={a.id} acc={a} />
-        ))}
+      <div className="space-y-5">
+        {groups.map((group) => {
+          const total = group.accounts.reduce((sum, acc) => sum + acc.balance, 0);
+          return (
+            <div key={group.currencyCode}>
+              <div className="mb-2 flex items-baseline justify-between px-1">
+                <span className="text-[11px] font-semibold tracking-wide text-slate-400">{group.currencyCode}</span>
+                <span className={`num text-sm font-semibold ${total < 0 ? "text-rose-500" : "text-slate-500"}`}>
+                  {formatAccountMoney(total, group.currencyCode, lang)}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {group.accounts.map((a) => (
+                  <AccountCard key={a.id} acc={a} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function defaultAccountCurrency(boot: Bootstrap) {
+  return boot.settings.reportingCurrency ?? boot.enabledCurrencies[0] ?? boot.supportedCurrencies[0]?.code ?? "";
 }
 
 export function AccountsPage() {
@@ -70,6 +90,7 @@ export function AccountsPage() {
   const [name, setName] = useState("");
   const [type, setType] = useState("checking");
   const [balance, setBalance] = useState("");
+  const [currencyCode, setCurrencyCode] = useState("");
   const [date, setDate] = useState(() => todayIso(boot?.settings.timezone));
 
   if (!boot) return null;
@@ -77,18 +98,32 @@ export function AccountsPage() {
   const onBudget = accs.filter((a) => !a.closed && a.on_budget);
   const tracking = accs.filter((a) => !a.closed && !a.on_budget);
   const closed = accs.filter((a) => a.closed);
+  const supported = boot.supportedCurrencies ?? [];
+
+  const openCreate = () => {
+    setDate(todayIso(boot.settings.timezone));
+    setCurrencyCode(defaultAccountCurrency(boot));
+    setOpen(true);
+  };
 
   const create = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || !currencyCode) return;
     try {
-      await api.createAccount({ name: name.trim(), type, startingBalance: Math.round(Number(balance || 0) * 100), startingDate: date });
+      const startingBalanceMinor = balance.trim() === "" ? 0 : parseAmountToMinor(balance, currencyCode);
+      await api.createAccount({
+        name: name.trim(),
+        type,
+        currencyCode,
+        startingBalanceMinor,
+        startingDate: date,
+      });
       setOpen(false);
       setName("");
       setBalance("");
       await refreshBoot();
       toast(lang === "zh" ? "账户已创建" : "Account created");
-    } catch {
-      toast(t("common_error"), "err");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t("common_error"), "err");
     }
   };
 
@@ -99,7 +134,7 @@ export function AccountsPage() {
           <h1 className="text-xl font-bold text-slate-900">{t("nav_accounts")}</h1>
           <p className="mt-0.5 text-[13px] text-slate-400">{t("common_allAccounts")}</p>
         </div>
-        <Btn variant="primary" onClick={() => { setDate(todayIso(boot?.settings.timezone)); setOpen(true); }}>
+        <Btn variant="primary" onClick={openCreate}>
           <Plus size={15} /> {t("account_add")}
         </Btn>
       </div>
@@ -131,12 +166,21 @@ export function AccountsPage() {
                 ))}
               </select>
             </Field>
-            <Field label={t("account_startDate")}>
-              <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
+            <Field label={t("account_currency")}>
+              <select className={inputCls} value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
+                {supported.map((currency) => (
+                  <option key={currency.code} value={currency.code}>
+                    {currency.code}
+                  </option>
+                ))}
+              </select>
             </Field>
           </div>
-          <Field label={`${t("account_startBalance")} (${boot.settings.currencySymbol})`}>
-            <input className={inputCls + " num"} placeholder="0.00" value={balance} onChange={(e) => setBalance(e.target.value)} />
+          <Field label={t("account_startDate")}>
+            <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <Field label={t("account_startBalance")}>
+            <input className={inputCls + " num"} placeholder={currencyCode || "0"} value={balance} onChange={(e) => setBalance(e.target.value)} />
           </Field>
           <p className="mb-3 text-[11px] leading-relaxed text-slate-400">
             {lang === "zh"

@@ -64,7 +64,8 @@ describe("financial write lock while migration is pending", () => {
     const created = await call("POST", "/api/accounts", {
       name: "现金",
       type: "cash",
-      startingBalance: 10000,
+      currencyCode: "CNY",
+      startingBalanceMinor: 10000,
     });
     expect(created.status).toBe(200);
     accountId = created.json.id;

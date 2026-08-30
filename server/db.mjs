@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { migrations } from "./migrations.mjs";
 import { ensureCurrencyMigrationState } from "./currency-state.mjs";
+import { createAccountRecord } from "./account-currency.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
@@ -156,19 +157,18 @@ const ACCOUNT_TYPES = [
 ];
 export const isCreditType = (t) => CREDIT_TYPES.has(t);
 
-export function createAccount({ name, type, startingBalance = 0, startingDate = null }) {
-  const meta = ACCOUNT_TYPES.find((a) => a.type === type);
-  if (!meta) throw new Error("invalid account type");
-  const id = uid();
-  db.prepare(
-    "INSERT INTO accounts(id,name,type,on_budget,closed,starting_balance,starting_balance_date,sort_order,created_at) VALUES(?,?,?,?,0,?,?,?,?)"
-  ).run(id, name, type, meta.onBudget, Math.round(startingBalance), startingDate || ymd(new Date()), Date.now(), nowIso());
-  if (startingBalance !== 0) {
-    db.prepare(
-      "INSERT INTO transactions(id,account_id,date,payee_name,amount,cleared,reconciled,is_start,created_at) VALUES(?,?,?,?,?,1,0,1,?)"
-    ).run(uid(), id, startingDate || ymd(new Date()), "__starting__", Math.round(startingBalance), nowIso());
-  }
-  return id;
+export function createAccount({ name, type, startingBalance = 0, startingDate = null, currencyCode, startingBalanceMinor }) {
+  return createAccountRecord(
+    db,
+    {
+      name,
+      type,
+      currencyCode,
+      startingBalanceMinor: startingBalanceMinor ?? Math.round(Number(startingBalance) || 0),
+      startingDate: startingDate || todayYmd(),
+    },
+    { requireCurrency: false, uid, nowIso, todayYmd: todayYmd() }
+  );
 }
 
 export function getTimezone() {

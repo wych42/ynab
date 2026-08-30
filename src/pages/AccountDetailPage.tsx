@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtDate, fmtMoney, parseAmountToCents, todayIso } from "../format";
+import { fmtDate, formatAccountMoney, parseAmountToCents, todayIso } from "../format";
 import { Btn, Modal, Spinner, Field, inputCls } from "../components/ui";
 import { AmountInput, CategorySelect, PayeeSelect, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, type FormState } from "../components/txEdit";
 import { ACCOUNT_TYPE_LABELS } from "./AccountsPage";
@@ -22,7 +22,10 @@ import type { Tx } from "../types";
 
 export function AccountDetailPage({ id }: { id: string }) {
   const { boot, t, lang, refreshBoot, toast } = useApp();
-  const [reg, setReg] = useState<{ account: { name: string; type: string; balance: number }; transactions: Tx[] } | null>(null);
+  const [reg, setReg] = useState<{
+    account: { name: string; type: string; balance: number; currencyCode?: string | null };
+    transactions: Tx[];
+  } | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<FormState>(() => emptyForm());
@@ -51,6 +54,7 @@ export function AccountDetailPage({ id }: { id: string }) {
 
   const accMeta = boot?.accounts.find((a) => a.id === id);
   const isCredit = accMeta ? ["creditCard", "lineOfCredit"].includes(accMeta.type) : false;
+  const currencyCode = reg?.account.currencyCode ?? accMeta?.currencyCode ?? null;
 
   const visible = useMemo(() => {
     if (!reg) return [];
@@ -143,18 +147,43 @@ export function AccountDetailPage({ id }: { id: string }) {
           </a>
           <HeaderName name={reg.account.name} onSave={async (n) => { await api.updateAccount(id, { name: n }); await refreshBoot(); await load(); }} />
           {label && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">{label[lang]}</span>}
+          <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
+            <span>{t("account_currency")}</span>
+            <select
+              aria-label={t("account_currency")}
+              className={`${inputCls} w-24 py-1 text-[12px]`}
+              value={currencyCode ?? ""}
+              onChange={async (e) => {
+                const next = e.target.value;
+                if (!next || next === currencyCode) return;
+                try {
+                  await api.updateAccount(id, { currencyCode: next });
+                  await Promise.all([refreshBoot(), load()]);
+                } catch (err) {
+                  const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
+                  toast(code === "account_currency_locked" ? t("account_currencyLocked") : t("common_error"), "err");
+                }
+              }}
+            >
+              {(boot.supportedCurrencies ?? []).map((currency) => (
+                <option key={currency.code} value={currency.code}>
+                  {currency.code}
+                </option>
+              ))}
+            </select>
+          </label>
           {accMeta?.closed === 1 && (
             <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] font-medium text-white">{t("account_closedTip")}</span>
           )}
           <div className="ml-auto flex items-center gap-5">
             <div className="text-right">
               <div className="text-[11px] uppercase tracking-wide text-slate-400">{t("account_clearedBalance")}</div>
-              <div className="num text-sm font-semibold text-slate-600">{fmtMoney(clearedBalance)}</div>
+              <div className="num text-sm font-semibold text-slate-600">{formatAccountMoney(clearedBalance, currencyCode, lang)}</div>
             </div>
             <div className="text-right">
               <div className="text-[11px] uppercase tracking-wide text-slate-400">{t("account_balance")}</div>
               <div className={`num text-xl font-bold ${reg.account.balance < 0 ? "text-rose-600" : "text-slate-900"}`}>
-                {fmtMoney(reg.account.balance)}
+                {formatAccountMoney(reg.account.balance, currencyCode, lang)}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -206,6 +235,7 @@ export function AccountDetailPage({ id }: { id: string }) {
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-10 pt-3 md:px-6">
         <TxTable
           txs={visible}
+          currencyCode={currencyCode}
           editingId={editingId}
           editForm={editForm}
           setEditForm={setEditForm}
@@ -242,6 +272,7 @@ export function AccountDetailPage({ id }: { id: string }) {
         <ReconcileModal
           id={id}
           balance={reg.account.balance}
+          currencyCode={currencyCode}
           unclearedCount={unclearedCount}
           onClose={() => setReconciling(false)}
           onDone={async () => {
@@ -258,17 +289,19 @@ export function AccountDetailPage({ id }: { id: string }) {
 function ReconcileModal({
   id,
   balance,
+  currencyCode,
   unclearedCount,
   onClose,
   onDone,
 }: {
   id: string;
   balance: number;
+  currencyCode?: string | null;
   unclearedCount: number;
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
-  const { t, toast } = useApp();
+  const { t, toast, lang } = useApp();
   const [v, setV] = useState((balance / 100).toFixed(2));
   const [markCleared, setMarkCleared] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -294,7 +327,7 @@ function ReconcileModal({
     <Modal title={t("rec_title")} onClose={onClose}>
       <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
         <span>{t("rec_currentBalance")}</span>
-        <span className="num font-semibold text-slate-900">{fmtMoney(balance)}</span>
+        <span className="num font-semibold text-slate-900">{formatAccountMoney(balance, currencyCode, lang)}</span>
       </div>
       <Field label={t("rec_statement")}>
         <input
@@ -307,7 +340,7 @@ function ReconcileModal({
       </Field>
       {diff !== null && diff !== 0 && (
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          {t("rec_diffHint", { amount: fmtMoney(diff) })}
+          {t("rec_diffHint", { amount: formatAccountMoney(diff, currencyCode, lang) })}
         </p>
       )}
       {unclearedCount > 0 && (
@@ -420,6 +453,7 @@ const headCls = "px-2 py-2 text-left text-[11px] font-bold uppercase tracking-wi
 
 function TxTable({
   txs,
+  currencyCode,
   editingId,
   editForm,
   setEditForm,
@@ -430,6 +464,7 @@ function TxTable({
   onToggleCleared,
 }: {
   txs: Tx[];
+  currencyCode?: string | null;
   editingId: string | null;
   editForm: FormState;
   setEditForm: (f: FormState) => void;
@@ -528,11 +563,11 @@ function TxTable({
               {tx.categoryName ?? (tx.transferAccountId ? "" : <span className="italic text-slate-300">{t("tx_uncategorized")}</span>)}
             </span>
             <span className="truncate px-2 text-[12px] text-slate-400">{tx.memo}</span>
-            <span className="num px-2 text-right text-[13px] text-rose-500">{tx.amount < 0 ? fmtMoney(-tx.amount) : ""}</span>
-            <span className="num px-2 text-right text-[13px] text-emerald-600">{tx.amount > 0 ? fmtMoney(tx.amount) : ""}</span>
+            <span className="num px-2 text-right text-[13px] text-rose-500">{tx.amount < 0 ? formatAccountMoney(-tx.amount, currencyCode, lang) : ""}</span>
+            <span className="num px-2 text-right text-[13px] text-emerald-600">{tx.amount > 0 ? formatAccountMoney(tx.amount, currencyCode, lang) : ""}</span>
             <div className="relative flex items-center justify-end gap-2 px-2">
               <span className={`num text-[13px] ${tx.balance !== undefined && tx.balance < 0 ? "text-rose-500" : "text-slate-400"}`}>
-                {tx.balance !== undefined ? fmtMoney(tx.balance) : ""}
+                {tx.balance !== undefined ? formatAccountMoney(tx.balance, currencyCode, lang) : ""}
               </span>
               <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100">
                 {!tx.isStart && (

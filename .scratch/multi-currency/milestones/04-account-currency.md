@@ -2,7 +2,7 @@
 
 > Milestone：04
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：完成旧账本迁移和恢复路径
 >
@@ -41,8 +41,9 @@ git diff --check
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 验收：待填写
-- Commit：待填写
+- 启动日期：2026-08-31
+- Grok session：`01a053bf-663c-7280-8ac7-f7411cf9745e`，模型 `grok-4.6`，reasoning effort `xhigh`
+- RED：首轮目标套件共有 23 个失败，证明公共账户 API、账户币种业务规则、设置入口和账户页面都缺少目标能力。独立审查追加两个失败用例：整数形式的旧 `startingBalance` 仍被公共 API 接受；真实 SQLite 触发器用于证明创建中断时的新币种账本必须回滚。
+- GREEN：targeted 5 个文件和 26 个测试通过；全量 47 个文件和 393 个测试通过；typecheck、production build 与 `git diff --check` 通过。
+- 验收：公共账户 API 必须提交内置 `currencyCode` 和 `startingBalanceMinor`，不再根据旧符号推断或接受含义不明的余额字段。创建账户、启用账本和期初流水在同一事务完成，真实数据库故障证明三者一起回滚。空且零余额账户可以修改币种，存在余额或非期初流水时返回稳定错误。Settings 可以从服务端目录启用可选币种并选择已启用的汇总币种；账户列表、明细和 Sidebar 按账户币种格式化，并只计算同币种小计。交易与对账输入的多币种改造保留给统一写入里程碑。
+- Commit：本里程碑提交 `feat: add account currency workflows`

@@ -39,6 +39,7 @@ export interface Account {
   sort_order: number;
   created_at: string;
   balance: number;
+  currencyCode?: string | null;
 }
 
 export interface Goal {

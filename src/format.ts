@@ -6,6 +6,45 @@ export function setCurrencySymbol(s: string) {
   currencySymbol = s || "¥";
 }
 
+export function localeForLang(lang?: string): string {
+  return lang === "en" ? "en-US" : "zh-CN";
+}
+
+export function formatAccountMoney(
+  amountMinor: number,
+  currencyCode: string | null | undefined,
+  lang?: string,
+): string {
+  if (currencyCode) return fmtMoney(amountMinor, { currencyCode, locale: localeForLang(lang) });
+  return fmtMoney(amountMinor);
+}
+
+export function totalsByCurrency(
+  accounts: { currencyCode?: string | null; balance: number }[],
+): { currencyCode: string; total: number }[] {
+  const map = new Map<string, number>();
+  for (const acc of accounts) {
+    const code = acc.currencyCode;
+    if (!code) continue;
+    map.set(code, (map.get(code) ?? 0) + acc.balance);
+  }
+  return [...map.entries()].map(([currencyCode, total]) => ({ currencyCode, total }));
+}
+
+export function groupAccountsByCurrency<T extends { currencyCode?: string | null }>(
+  accounts: T[],
+): { currencyCode: string; accounts: T[] }[] {
+  const map = new Map<string, T[]>();
+  for (const acc of accounts) {
+    const code = acc.currencyCode;
+    if (!code) continue;
+    const list = map.get(code) ?? [];
+    list.push(acc);
+    map.set(code, list);
+  }
+  return [...map.entries()].map(([currencyCode, grouped]) => ({ currencyCode, accounts: grouped }));
+}
+
 export function fmtMoney(
   cents: number,
   opts?: { sign?: boolean; currencyCode?: string; locale?: string },

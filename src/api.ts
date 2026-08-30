@@ -73,6 +73,8 @@ export const api = {
     currencySymbol?: string;
     language?: string;
     timezone?: string;
+    reportingCurrency?: string;
+    enableCurrency?: string;
     aiBaseUrl?: string;
     aiModel?: string;
     aiKey?: string;
@@ -151,9 +153,14 @@ export const api = {
   copyLastMonth: (month: string) => req<BudgetData>(`/api/budget/${month}/copy-previous`, { method: "POST" }),
 
   accounts: () => req<{ accounts: Account[] }>("/api/accounts"),
-  createAccount: (body: { name: string; type: string; startingBalance: number; startingDate?: string }) =>
-    req<{ id: string }>("/api/accounts", { method: "POST", body: JSON.stringify(body) }),
-  updateAccount: (id: string, body: { name?: string; closed?: boolean }) =>
+  createAccount: (body: {
+    name: string;
+    type: string;
+    currencyCode: string;
+    startingBalanceMinor: number;
+    startingDate?: string;
+  }) => req<{ id: string }>("/api/accounts", { method: "POST", body: JSON.stringify(body) }),
+  updateAccount: (id: string, body: { name?: string; closed?: boolean; currencyCode?: string }) =>
     req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteAccount: (id: string) => req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "DELETE" }),
   accountRegister: (id: string) =>

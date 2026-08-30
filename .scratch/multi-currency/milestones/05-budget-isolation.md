@@ -2,7 +2,7 @@
 
 > Milestone：05
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：让账户和设置明确携带币种
 >
