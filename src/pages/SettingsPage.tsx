@@ -6,6 +6,7 @@ import {
   Pencil,
   Plus,
   QrCode,
+  RefreshCw,
   Send,
   Sparkles,
   Trash2,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import type { ImChannel, ImChannelType, Lang, WechatLoginState } from "../types";
+import type { FxStatus, ImChannel, ImChannelType, Lang, WechatLoginState } from "../types";
 import { Btn, Modal, inputCls } from "../components/ui";
 
 function Card({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
@@ -104,6 +105,58 @@ export function SettingsPage() {
       setAddCurrency("");
       await refreshBoot();
       toast(t("settings_savedOk"));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t("common_error"), "err");
+    }
+  };
+
+  const [fxStatus, setFxStatus] = useState<FxStatus | null>(null);
+  const [fxError, setFxError] = useState("");
+  const [fxBusy, setFxBusy] = useState(false);
+  const [fxBase, setFxBase] = useState("");
+  const [fxQuote, setFxQuote] = useState("");
+  const [fxDate, setFxDate] = useState("");
+  const [fxRate, setFxRate] = useState("");
+
+  const loadFxStatus = useCallback(async () => {
+    const status = await api.getFxStatus();
+    setFxStatus(status);
+    return status;
+  }, []);
+
+  useEffect(() => {
+    loadFxStatus().catch(() => {});
+  }, [loadFxStatus]);
+
+  const refreshFx = async () => {
+    setFxBusy(true);
+    setFxError("");
+    try {
+      const status = await api.syncFxRates();
+      setFxStatus(status);
+    } catch {
+      setFxError(t("settings_fxRefreshFail"));
+    } finally {
+      setFxBusy(false);
+    }
+  };
+
+  const saveManualRate = async () => {
+    if (!fxBase || !fxQuote || !fxDate || !fxRate) return;
+    try {
+      await api.putFxRate(fxDate, fxBase, fxQuote, fxRate.trim());
+      setFxError("");
+      await loadFxStatus();
+      toast(t("settings_savedOk"));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : t("common_error"), "err");
+    }
+  };
+
+  const deleteManualRate = async (rateDate: string, baseCurrency: string, quoteCurrency: string) => {
+    try {
+      await api.deleteFxRate(rateDate, baseCurrency, quoteCurrency);
+      await loadFxStatus();
     } catch (e) {
       toast(e instanceof Error ? e.message : t("common_error"), "err");
     }
@@ -326,6 +379,123 @@ export function SettingsPage() {
               </Btn>
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card title={t("settings_fxSection")} desc={t("settings_fxDesc")}>
+        <div data-testid="fx-section" className="space-y-4">
+          <p className="text-[11px] leading-relaxed text-slate-400">{t("settings_fxHint")}</p>
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div>
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxProvider")}</span>
+              <p data-testid="fx-provider" className="text-sm font-medium text-slate-700">
+                {fxStatus?.defaultProvider ?? "—"}
+              </p>
+            </div>
+            <div>
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxLatestDate")}</span>
+              <p data-testid="fx-latest-date" className="text-sm font-medium text-slate-700">
+                {fxStatus?.latestRateDate ?? t("settings_fxEmpty")}
+              </p>
+            </div>
+            <div>
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxLatestSource")}</span>
+              <p data-testid="fx-latest-source" className="text-sm font-medium text-slate-700">
+                {fxStatus?.latestSource ?? "—"}
+              </p>
+            </div>
+            <Btn aria-label={t("settings_fxRefresh")} disabled={fxBusy} onClick={refreshFx}>
+              {fxBusy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+              {fxBusy ? t("settings_fxRefreshing") : t("settings_fxRefresh")}
+            </Btn>
+          </div>
+          {fxError && (
+            <p data-testid="fx-refresh-error" className="text-xs text-rose-500">
+              {fxError}
+            </p>
+          )}
+          <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-4">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxBase")}</span>
+              <select
+                aria-label={t("settings_fxBase")}
+                value={fxBase}
+                onChange={(e) => setFxBase(e.target.value)}
+                className={`${inputCls} min-w-[110px]`}
+              >
+                <option value="">{t("settings_addCurrencyPlaceholder")}</option>
+                {enabledCurrencies.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxQuote")}</span>
+              <select
+                aria-label={t("settings_fxQuote")}
+                value={fxQuote}
+                onChange={(e) => setFxQuote(e.target.value)}
+                className={`${inputCls} min-w-[110px]`}
+              >
+                <option value="">{t("settings_addCurrencyPlaceholder")}</option>
+                {enabledCurrencies.map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxDate")}</span>
+              <input
+                aria-label={t("settings_fxDate")}
+                type="date"
+                className={inputCls}
+                value={fxDate}
+                onChange={(e) => setFxDate(e.target.value)}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxRate")}</span>
+              <input
+                aria-label={t("settings_fxRate")}
+                className={`${inputCls} w-28`}
+                value={fxRate}
+                onChange={(e) => setFxRate(e.target.value)}
+                placeholder="7.20"
+              />
+            </label>
+            <Btn onClick={saveManualRate} disabled={!fxBase || !fxQuote || !fxDate || !fxRate}>
+              {t("settings_fxSaveManual")}
+            </Btn>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-medium text-slate-500">{t("settings_fxCached")}</p>
+            <ul data-testid="fx-cache-list" className="space-y-1.5">
+              {(fxStatus?.rates ?? []).map((row) => (
+                <li
+                  key={`${row.rateDate}-${row.baseCurrency}-${row.quoteCurrency}-${row.source}`}
+                  className="flex items-center gap-2 text-[12px] text-slate-600"
+                >
+                  <span className="min-w-0 flex-1">
+                    {row.baseCurrency}/{row.quoteCurrency} {row.rate} · {row.rateDate} · {row.source}
+                  </span>
+                  {row.source === "manual" && (
+                    <button
+                      type="button"
+                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                      aria-label={`${t("settings_fxDeleteManual")} ${row.baseCurrency}/${row.quoteCurrency} ${row.rateDate}`}
+                      onClick={() => deleteManualRate(row.rateDate, row.baseCurrency, row.quoteCurrency)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </Card>
 

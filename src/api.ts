@@ -14,6 +14,7 @@ import type {
   CurrencyMigrationBackup,
   CurrencyMigrationPreview,
   CurrencyMigrationConfirmResult,
+  FxStatus,
 } from "./types";
 import { getToken } from "./auth";
 
@@ -225,4 +226,15 @@ export const api = {
     req<ReportsData>(`/api/reports/overview?months=${months}&currency=${encodeURIComponent(currency)}`),
   nativeReport: (currency: string, months = 12) =>
     req<ReportsData>(`/api/reports/native?currency=${encodeURIComponent(currency)}&months=${months}`),
+
+  getFxStatus: () => req<FxStatus>("/api/fx/status"),
+  syncFxRates: (body?: { fromDate?: string; toDate?: string }) =>
+    req<FxStatus>("/api/fx/sync", { method: "POST", body: JSON.stringify(body ?? {}) }),
+  putFxRate: (rateDate: string, from: string, to: string, rate: string) =>
+    req<{ ok: true }>(`/api/fx/rates/${encodeURIComponent(rateDate)}/${from}/${to}`, {
+      method: "PUT",
+      body: JSON.stringify({ rate }),
+    }),
+  deleteFxRate: (rateDate: string, from: string, to: string) =>
+    req<{ ok: true }>(`/api/fx/rates/${encodeURIComponent(rateDate)}/${from}/${to}`, { method: "DELETE" }),
 };

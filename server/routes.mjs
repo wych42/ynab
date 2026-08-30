@@ -88,6 +88,7 @@ import {
   transferInputFromHttp,
   updateTransaction,
 } from "./currency-ledger.mjs";
+import { createFxModule, isFxError, FxProviderError } from "./fx.mjs";
 
 export const api = express.Router();
 
@@ -111,6 +112,14 @@ function sendLedgerError(res, error) {
 function requestCurrency(req) {
   const query = req.query?.currency;
   return requireEnabledCurrency(db, typeof query === "string" ? query : undefined);
+}
+
+const fxModule = createFxModule({ db, today: todayYmd, nowIso });
+
+function sendFxError(res, error) {
+  if (!isFxError(error)) throw error;
+  const provider = error instanceof FxProviderError || String(error.code || "").startsWith("fx_provider_");
+  return res.status(provider ? 502 : 400).json({ error: error.code, code: error.code, message: error.message });
 }
 
 function assertAssignmentTarget(categoryId, currencyCode) {
@@ -194,6 +203,9 @@ const FINANCIAL_WRITE_ROUTES = [
   ["PUT", /^\/categories\/[^/]+$/],
   ["DELETE", /^\/categories\/[^/]+$/],
   ["PUT", /^\/goals\/[^/]+$/],
+  ["POST", /^\/fx\/sync$/],
+  ["PUT", /^\/fx\/rates\/[^/]+\/[^/]+\/[^/]+$/],
+  ["DELETE", /^\/fx\/rates\/[^/]+\/[^/]+\/[^/]+$/],
 ];
 
 function isFinancialWrite(req) {
@@ -1186,5 +1198,48 @@ api.get("/reports/native", (req, res) => {
     res.json(buildNativeReport({ currencyCode, months: n }));
   } catch (e) {
     return sendAccountCurrencyError(res, e);
+  }
+});
+
+api.get("/fx/status", (req, res) => {
+  res.json(fxModule.getStatus());
+});
+
+api.post("/fx/sync", async (req, res) => {
+  try {
+    const status = await fxModule.syncRates({
+      fromDate: req.body?.fromDate,
+      toDate: req.body?.toDate,
+    });
+    res.json(status);
+  } catch (e) {
+    return sendFxError(res, e);
+  }
+});
+
+api.put("/fx/rates/:date/:from/:to", (req, res) => {
+  try {
+    fxModule.putManualRate({
+      rateDate: req.params.date,
+      baseCurrency: req.params.from,
+      quoteCurrency: req.params.to,
+      rate: req.body?.rate,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    return sendFxError(res, e);
+  }
+});
+
+api.delete("/fx/rates/:date/:from/:to", (req, res) => {
+  try {
+    fxModule.deleteManualRate({
+      rateDate: req.params.date,
+      baseCurrency: req.params.from,
+      quoteCurrency: req.params.to,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    return sendFxError(res, e);
   }
 });

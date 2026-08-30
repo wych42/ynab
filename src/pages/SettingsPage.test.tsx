@@ -2,7 +2,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
+const emptyFxStatus = {
+  defaultProvider: "frankfurter_ecb",
+  latestRateDate: null,
+  latestSource: null,
+  rates: [],
+  lastSyncError: null,
+};
+
 const h = vi.hoisted(() => ({
+  getFxStatus: vi.fn(),
+  syncFxRates: vi.fn(),
+  putFxRate: vi.fn(),
+  deleteFxRate: vi.fn(),
   saveSettings: vi.fn(),
   aiTest: vi.fn(),
   imChannels: vi.fn(),
@@ -23,6 +35,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../api", () => ({
   api: {
+    getFxStatus: (...a: unknown[]) => h.getFxStatus(...a),
+    syncFxRates: (...a: unknown[]) => h.syncFxRates(...a),
+    putFxRate: (...a: unknown[]) => h.putFxRate(...a),
+    deleteFxRate: (...a: unknown[]) => h.deleteFxRate(...a),
     saveSettings: (...a: unknown[]) => h.saveSettings(...a),
     aiTest: (...a: unknown[]) => h.aiTest(...a),
     imChannels: (...a: unknown[]) => h.imChannels(...a),
@@ -99,6 +115,8 @@ beforeEach(() => {
   for (const fn of Object.values(h)) fn.mockReset();
   h.imChannels.mockResolvedValue({ channels: [tgChannel, wxChannel] });
   h.refreshBoot.mockResolvedValue({});
+  h.getFxStatus.mockResolvedValue(emptyFxStatus);
+  h.syncFxRates.mockResolvedValue(emptyFxStatus);
 });
 
 afterEach(cleanup);

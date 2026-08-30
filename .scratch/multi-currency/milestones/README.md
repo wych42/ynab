@@ -24,8 +24,8 @@
 | [让账户明确携带币种](./04-account-currency.md) | 账户币种、账本启用和汇总币种设置 | implemented | targeted 26 tests；全量 393 tests；创建回滚、设置和账户页面通过 |
 | [隔离各币种预算](./05-budget-isolation.md) | 分配、目标、预算和原币收支隔离 | implemented | targeted 41 tests；全量 422 tests；查询参数、信用卡虚拟分类和切币竞态通过 |
 | [统一交易和换汇写入](./06-currency-ledger.md) | Currency Ledger Module 和跨币种转账 | implemented | targeted 85 tests；全量 469 tests；双腿原子性、分类保护和页面精度通过 |
-| [建立可替换的汇率模块](./07-fx-module.md) | Provider、缓存、人工覆盖和离线行为 | ready-for-agent | 统一财务写入边界已完成 |
-| [交付统一净资产报表](./08-reporting-net-worth.md) | 当前与历史净资产完整纵切 | blocked | 等待 FX Module |
+| [建立可替换的汇率模块](./07-fx-module.md) | Provider、缓存、人工覆盖和离线行为 | implemented | 验收修正后 targeted 76 tests；全量 60 files、521 tests；typecheck 和 build 通过 |
+| [交付统一净资产报表](./08-reporting-net-worth.md) | 当前与历史净资产完整纵切 | ready-for-agent | FX Module 已完成并通过验收 |
 | [补齐投资账户工作流](./09-investment-workflow.md) | 原币投资余额、估值调整和净资产联动 | blocked | 等待净资产报表 |
 | [收紧 AI 与 IM 写入](./10-ai-im-tools.md) | 类型化财务工具和只读 SQL | blocked | 等待统一财务 Interface |
 | [完成文档和发布验收](./11-release-readiness.md) | 文档、演示数据、迁移演练和完整验收 | blocked | 等待全部功能里程碑 |

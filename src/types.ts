@@ -81,6 +81,24 @@ export interface Bootstrap {
   enabledCurrencies: string[];
 }
 
+export type FxRateRecord = {
+  rateDate: string;
+  baseCurrency: string;
+  quoteCurrency: string;
+  rate: string;
+  source: string;
+  fetchedAt: string;
+};
+
+export type FxStatus = {
+  defaultProvider: string;
+  latestRateDate: string | null;
+  latestSource: string | null;
+  rates: FxRateRecord[];
+  lastSyncError: { code: string; message: string } | null;
+  ok?: boolean;
+};
+
 export interface CurrencyMigrationAnomaly {
   table: string;
   id: string;

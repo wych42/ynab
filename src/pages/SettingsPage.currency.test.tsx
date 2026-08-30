@@ -13,7 +13,19 @@ const SUPPORTED: CurrencyRecord[] = [
   { code: "JPY", exponent: 0, enabledByDefault: true },
 ];
 
+const emptyFxStatus = {
+  defaultProvider: "frankfurter_ecb",
+  latestRateDate: null,
+  latestSource: null,
+  rates: [],
+  lastSyncError: null,
+};
+
 const h = vi.hoisted(() => ({
+  getFxStatus: vi.fn(),
+  syncFxRates: vi.fn(),
+  putFxRate: vi.fn(),
+  deleteFxRate: vi.fn(),
   saveSettings: vi.fn(),
   imChannels: vi.fn(),
   refreshBoot: vi.fn(),
@@ -23,6 +35,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../api", () => ({
   api: {
+    getFxStatus: (...a: unknown[]) => h.getFxStatus(...a),
+    syncFxRates: (...a: unknown[]) => h.syncFxRates(...a),
+    putFxRate: (...a: unknown[]) => h.putFxRate(...a),
+    deleteFxRate: (...a: unknown[]) => h.deleteFxRate(...a),
     saveSettings: (...a: unknown[]) => h.saveSettings(...a),
     imChannels: (...a: unknown[]) => h.imChannels(...a),
   },
@@ -47,6 +63,10 @@ beforeEach(() => {
   h.refreshBoot.mockReset().mockResolvedValue({});
   h.toast.mockReset();
   h.imChannels.mockReset().mockResolvedValue({ channels: [] });
+  h.getFxStatus.mockReset().mockResolvedValue(emptyFxStatus);
+  h.syncFxRates.mockReset().mockResolvedValue(emptyFxStatus);
+  h.putFxRate.mockReset().mockResolvedValue({ ok: true });
+  h.deleteFxRate.mockReset().mockResolvedValue({ ok: true });
   h.boot = {
     settings: {
       currencySymbol: "¥",
