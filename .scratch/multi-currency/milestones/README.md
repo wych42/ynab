@@ -19,8 +19,8 @@
 | --- | --- | --- | --- |
 | [建立绿色基线](./00-green-baseline.md) | Node 20 全绿，CI 加入 build | implemented | Node 20.20.2；37 files、248 tests；typecheck 和 build 通过 |
 | [统一金额和币种目录](./01-money-foundation.md) | Money Module 和单一币种目录 | implemented | 共享目录；targeted 68 tests；全量 316 tests；typecheck 和 build 通过 |
-| [加入兼容的多币种 Schema](./02-compatible-schema.md) | 新表、新字段和迁移锁 | ready-for-agent | Money Module 已完成 |
-| [完成旧账本迁移](./03-legacy-migration.md) | 备份、确认、缩放和迁移页 | blocked | 等待兼容 Schema |
+| [加入兼容的多币种 Schema](./02-compatible-schema.md) | 新表、新字段和迁移锁 | implemented | targeted 21 tests；全量 337 tests；普通 Route 与 AI/IM 写锁通过 |
+| [完成旧账本迁移](./03-legacy-migration.md) | 备份、确认、缩放和迁移页 | ready-for-agent | 兼容 Schema 已完成 |
 | [让账户明确携带币种](./04-account-currency.md) | 账户币种、账本启用和汇总币种设置 | blocked | 等待旧账本迁移 |
 | [隔离各币种预算](./05-budget-isolation.md) | 分配、目标、预算和原币收支隔离 | blocked | 等待账户币种 |
 | [统一交易和换汇写入](./06-currency-ledger.md) | Currency Ledger Module 和跨币种转账 | blocked | 等待预算隔离 |

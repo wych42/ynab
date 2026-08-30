@@ -4,41 +4,56 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { migrations } from "./migrations.mjs";
+import { ensureCurrencyMigrationState } from "./currency-state.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
-export const db = new Database(path.join(DATA_DIR, "budget.db"));
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
-
 export const uid = () => crypto.randomUUID();
 export const nowIso = () => new Date().toISOString();
 
-runMigrations();
+export function isValidTimezone(tz) {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
-function runMigrations() {
-  db.exec(`
+function readSetting(database, key, fallback = null) {
+  const row = database.prepare("SELECT value FROM settings WHERE key=?").get(key);
+  return row ? row.value : fallback;
+}
+
+function writeSetting(database, key, value) {
+  database
+    .prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+    .run(key, String(value));
+}
+
+export function runMigrations(database) {
+  database.exec(`
 CREATE TABLE IF NOT EXISTS schema_migrations (
   version INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
   applied_at TEXT NOT NULL
 );
 `);
-  const appliedVersions = new Set(db.prepare("SELECT version FROM schema_migrations").all().map((r) => r.version));
-  const record = db.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)");
+  const appliedVersions = new Set(database.prepare("SELECT version FROM schema_migrations").all().map((r) => r.version));
+  const record = database.prepare("INSERT INTO schema_migrations(version,name,applied_at) VALUES(?,?,?)");
   // 表重建类迁移需要 DROP/RENAME 被引用的父表，外键必须在事务外关闭，结束后恢复
-  const fkEnabled = !!db.pragma("foreign_keys", { simple: true });
-  if (fkEnabled) db.pragma("foreign_keys = OFF");
+  const fkEnabled = !!database.pragma("foreign_keys", { simple: true });
+  if (fkEnabled) database.pragma("foreign_keys = OFF");
   try {
     for (const m of migrations) {
       if (appliedVersions.has(m.version)) continue;
       if (m.version <= Math.max(0, ...appliedVersions)) {
         throw new Error(`[db] migration version ${m.version} is older than an already applied migration; versions must only grow`);
       }
-      const run = db.transaction(() => {
-        m.up(db);
+      const run = database.transaction(() => {
+        m.up(database);
         record.run(m.version, m.name, nowIso());
       });
       try {
@@ -50,62 +65,20 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
       }
     }
   } finally {
-    if (fkEnabled) db.pragma("foreign_keys = ON");
+    if (fkEnabled) database.pragma("foreign_keys = ON");
   }
 }
 
-export function getSetting(key, fallback = null) {
-  const row = db.prepare("SELECT value FROM settings WHERE key=?").get(key);
-  return row ? row.value : fallback;
-}
-
-export function setSetting(key, value) {
-  db.prepare(
-    "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
-  ).run(key, String(value));
-}
-
-if (!getSetting("initialized")) {
-  setSetting("currency_symbol", "¥");
-  setSetting("language", "zh");
-  setSetting("ai_base_url", "https://api.openai.com/v1");
-  setSetting("ai_model", "gpt-4o-mini");
-  setSetting("ai_key", "");
-  setSetting("ai_require_confirmation", "1");
-  try {
-    const sysTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (sysTz && isValidTimezone(sysTz)) setSetting("timezone", sysTz);
-    else setSetting("timezone", "UTC");
-  } catch {
-    setSetting("timezone", "UTC");
-  }
-  seedDefaultCategories();
-  setSetting("initialized", "1");
-}
-// 已初始化的老库若缺失关键设置，补默认值以保证一致
-if (!getSetting("ai_require_confirmation")) {
-  setSetting("ai_require_confirmation", "1");
-}
-if (!getSetting("timezone")) {
-  try {
-    const sysTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (sysTz && isValidTimezone(sysTz)) setSetting("timezone", sysTz);
-    else setSetting("timezone", "UTC");
-  } catch {
-    setSetting("timezone", "UTC");
-  }
-}
-
-function seedDefaultCategories() {
+function seedDefaultCategories(database) {
   const groups = [
     ["日常开销", ["食品杂货", "餐饮外出", "交通出行", "日用百货", "话费网费"]],
     ["账单", ["房租房贷", "水电燃气", "订阅服务", "医疗保险"]],
     ["储蓄目标", ["应急基金", "旅行基金", "大额购物", "投资理财"]],
     ["其他支出", ["医疗健康", "学习提升", "人情往来", "宠物花费", "其他"]],
   ];
-  const insG = db.prepare("INSERT INTO category_groups(id,name,sort_order) VALUES(?,?,?)");
-  const insC = db.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)");
-  const tx = db.transaction(() => {
+  const insG = database.prepare("INSERT INTO category_groups(id,name,sort_order) VALUES(?,?,?)");
+  const insC = database.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)");
+  const tx = database.transaction(() => {
     groups.forEach(([gname, cats], gi) => {
       const gid = uid();
       insG.run(gid, gname, gi);
@@ -114,6 +87,57 @@ function seedDefaultCategories() {
   });
   tx();
 }
+
+function defaultTimezone() {
+  try {
+    const sysTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (sysTz && isValidTimezone(sysTz)) return sysTz;
+  } catch {}
+  return "UTC";
+}
+
+function ensureAppInitialized(database) {
+  if (!readSetting(database, "initialized")) {
+    writeSetting(database, "currency_symbol", "¥");
+    writeSetting(database, "language", "zh");
+    writeSetting(database, "ai_base_url", "https://api.openai.com/v1");
+    writeSetting(database, "ai_model", "gpt-4o-mini");
+    writeSetting(database, "ai_key", "");
+    writeSetting(database, "ai_require_confirmation", "1");
+    writeSetting(database, "timezone", defaultTimezone());
+    seedDefaultCategories(database);
+    writeSetting(database, "initialized", "1");
+  }
+  if (!readSetting(database, "ai_require_confirmation")) {
+    writeSetting(database, "ai_require_confirmation", "1");
+  }
+  if (!readSetting(database, "timezone")) {
+    writeSetting(database, "timezone", defaultTimezone());
+  }
+}
+
+export function openBudgetDatabase(filePath) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const database = new Database(filePath);
+  database.pragma("journal_mode = WAL");
+  database.pragma("foreign_keys = ON");
+  runMigrations(database);
+  ensureAppInitialized(database);
+  ensureCurrencyMigrationState(database);
+  return database;
+}
+
+export const db = openBudgetDatabase(path.join(DATA_DIR, "budget.db"));
+
+export function getSetting(key, fallback = null) {
+  return readSetting(db, key, fallback);
+}
+
+export function setSetting(key, value) {
+  writeSetting(db, key, value);
+}
+
+export { ensureCurrencyMigrationState };
 
 const CREDIT_TYPES = new Set(["creditCard", "lineOfCredit", "studentLoan", "personalLoan", "otherLiability"]);
 const ACCOUNT_TYPES = [
@@ -145,15 +169,6 @@ export function createAccount({ name, type, startingBalance = 0, startingDate = 
     ).run(uid(), id, startingDate || ymd(new Date()), "__starting__", Math.round(startingBalance), nowIso());
   }
   return id;
-}
-
-export function isValidTimezone(tz) {
-  try {
-    Intl.DateTimeFormat(undefined, { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export function getTimezone() {

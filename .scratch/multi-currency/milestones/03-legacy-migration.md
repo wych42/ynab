@@ -2,7 +2,7 @@
 
 > Milestone：03
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：加入兼容的多币种 Schema
 >

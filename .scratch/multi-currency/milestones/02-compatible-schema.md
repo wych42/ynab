@@ -2,7 +2,7 @@
 
 > Milestone：02
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：统一金额规则和币种目录
 >
@@ -41,8 +41,9 @@ git diff --check
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 验收：待填写
-- Commit：待填写
+- 启动日期：2026-08-31
+- Grok session：`01a05388-1d0c-78a3-9548-3ce3fc40475c`，模型 `grok-4.6`，reasoning effort `xhigh`
+- RED：真实临时 SQLite 与 HTTP 测试先因缺少 `currency-state`、bootstrap 币种字段和迁移锁而失败。审查追加 AI/IM 回归后，网页确认、IM `confirmPending` 和免确认 Agent 均能在 pending 状态写出账户，证明只锁普通 Route 不足。
+- GREEN：targeted 2 个文件和 21 个测试通过；全量 41 个文件和 337 个测试通过；typecheck、production build 与 `git diff --check` 通过。
+- 验收：只追加 migration 10。旧库金额逐行保持不变，账户、分配和目标币种仍为空，不读取旧符号，不创建猜测账本；空库初始化五个默认账本。Bootstrap 返回七个支持币种、已启用币种、可空汇总币种和迁移状态。普通财务 Route 与 AI/IM 共用 SQL 写边界在 pending 时都返回稳定锁错误，读取、备份、聊天记录和 SELECT 保持可用。
+- Commit：本里程碑提交 `feat: add compatible currency schema`

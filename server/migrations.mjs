@@ -268,4 +268,73 @@ CREATE INDEX IF NOT EXISTS idx_chat_sessions_channel_lookup ON chat_sessions(cha
       db.exec("ALTER TABLE chat_messages ADD COLUMN images TEXT");
     },
   },
+  {
+    // 多币种兼容 Schema：只加表/字段/索引，不猜测旧币种，不改写金额。
+    // 账户币种与预算金额的币种列可空，供后续显式迁移回填；数据库只约束三位大写代码。
+    version: 10,
+    name: "compatible-currency-schema",
+    up: (db) => {
+      const CURRENCY_SHAPE = (column) =>
+        `${column} IS NULL OR (length(${column}) = 3 AND ${column} GLOB '[A-Z][A-Z][A-Z]')`;
+      const addColumn = (table, definition) => {
+        const column = definition.trim().split(/\s+/)[0];
+        const exists = db.pragma(`table_info(${table})`).some((c) => c.name === column);
+        if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+      };
+
+      db.exec(`
+CREATE TABLE IF NOT EXISTS currency_ledgers (
+  currency_code TEXT NOT NULL PRIMARY KEY
+    CHECK (
+      length(currency_code) = 3
+      AND currency_code GLOB '[A-Z][A-Z][A-Z]'
+    ),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE TABLE IF NOT EXISTS fx_rates (
+  rate_date TEXT NOT NULL,
+  base_currency TEXT NOT NULL
+    CHECK (
+      length(base_currency) = 3
+      AND base_currency GLOB '[A-Z][A-Z][A-Z]'
+    ),
+  quote_currency TEXT NOT NULL
+    CHECK (
+      length(quote_currency) = 3
+      AND quote_currency GLOB '[A-Z][A-Z][A-Z]'
+    ),
+  rate TEXT NOT NULL,
+  source TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  PRIMARY KEY (rate_date, base_currency, quote_currency, source)
+);
+`);
+
+      addColumn(
+        "accounts",
+        `currency_code TEXT CHECK (${CURRENCY_SHAPE("currency_code")}) REFERENCES currency_ledgers(currency_code)`
+      );
+      addColumn("transactions", `original_currency_code TEXT CHECK (${CURRENCY_SHAPE("original_currency_code")})`);
+      addColumn("transactions", "original_amount INTEGER");
+      addColumn("categories", "system_key TEXT");
+      addColumn(
+        "assignments",
+        `currency_code TEXT CHECK (${CURRENCY_SHAPE("currency_code")}) REFERENCES currency_ledgers(currency_code)`
+      );
+      addColumn(
+        "goals",
+        `currency_code TEXT CHECK (${CURRENCY_SHAPE("currency_code")}) REFERENCES currency_ledgers(currency_code)`
+      );
+
+      db.exec(`
+CREATE INDEX IF NOT EXISTS idx_accounts_currency_code ON accounts(currency_code);
+CREATE INDEX IF NOT EXISTS idx_assignments_currency_code ON assignments(currency_code);
+CREATE INDEX IF NOT EXISTS idx_goals_currency_code ON goals(currency_code);
+CREATE INDEX IF NOT EXISTS idx_tx_original_currency ON transactions(original_currency_code);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_system_key ON categories(system_key) WHERE system_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_date ON fx_rates(base_currency, quote_currency, rate_date);
+`);
+    },
+  },
 ];

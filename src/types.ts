@@ -1,8 +1,11 @@
+import type { CurrencyRecord } from "./money";
+
 export type Lang = "zh" | "en";
 
 export interface Settings {
   currencySymbol: string;
   language: Lang;
+  reportingCurrency: string | null;
   timezone: string;
   aiBaseUrl: string;
   aiModel: string;
@@ -69,6 +72,9 @@ export interface Bootstrap {
   payees: string[];
   groups: CategoryGroup[];
   currentMonth: string;
+  currencyMigrationRequired: boolean;
+  supportedCurrencies: CurrencyRecord[];
+  enabledCurrencies: string[];
 }
 
 export interface Need {

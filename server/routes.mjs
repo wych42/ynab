@@ -53,10 +53,46 @@ import { isAuthEnabled, verifyPassword, signToken, requireAuth } from "./auth.mj
 import { runBackupNow, s3ConfigFromSettings } from "./backup.mjs";
 import { syncBackupScheduler, readBackupSettings } from "./backup.scheduler.mjs";
 import { s3ListObjects } from "./s3.mjs";
+import {
+  currencyMigrationLockPayload,
+  getCurrencyBootstrapState,
+  isCurrencyMigrationRequired,
+} from "./currency-state.mjs";
 
 export const api = express.Router();
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
+
+const FINANCIAL_WRITE_ROUTES = [
+  ["POST", /^\/demo$/],
+  ["POST", /^\/accounts$/],
+  ["PUT", /^\/accounts\/[^/]+$/],
+  ["DELETE", /^\/accounts\/[^/]+$/],
+  ["PUT", /^\/budget\/[^/]+\/category\/[^/]+\/assign$/],
+  ["POST", /^\/budget\/[^/]+\/move$/],
+  ["POST", /^\/budget\/[^/]+\/cover$/],
+  ["POST", /^\/budget\/[^/]+\/copy-previous$/],
+  ["POST", /^\/budget\/[^/]+\/auto-assign$/],
+  ["PATCH", /^\/transactions\/[^/]+\/category$/],
+  ["PATCH", /^\/transactions\/[^/]+\/cleared$/],
+  ["POST", /^\/transactions$/],
+  ["POST", /^\/transactions\/bulk-category$/],
+  ["POST", /^\/transactions\/bulk-delete$/],
+  ["PUT", /^\/transactions\/[^/]+$/],
+  ["DELETE", /^\/transactions\/[^/]+$/],
+  ["POST", /^\/reconcile\/[^/]+$/],
+  ["POST", /^\/category-groups$/],
+  ["PUT", /^\/category-groups\/[^/]+$/],
+  ["DELETE", /^\/category-groups\/[^/]+$/],
+  ["POST", /^\/categories$/],
+  ["PUT", /^\/categories\/[^/]+$/],
+  ["DELETE", /^\/categories\/[^/]+$/],
+  ["PUT", /^\/goals\/[^/]+$/],
+];
+
+function isFinancialWrite(req) {
+  return FINANCIAL_WRITE_ROUTES.some(([method, pattern]) => req.method === method && pattern.test(req.path));
+}
 
 // 额外提示词会被嵌入 LLM 系统提示词（网页 + IM 共用），设一个合理上限防止异常内容撑爆请求体
 const MAX_EXTRA_PROMPT_CHARS = 20000;
@@ -84,6 +120,11 @@ api.post("/auth/login", (req, res) => {
 // 之后的所有接口都需要有效 JWT（登录与状态之外），防止绕过
 api.use(requireAuth);
 
+api.use((req, res, next) => {
+  if (!isFinancialWrite(req) || !isCurrencyMigrationRequired(db)) return next();
+  return res.status(409).json(currencyMigrationLockPayload());
+});
+
 api.post("/demo", (req, res) => {
   const n = db.prepare("SELECT COUNT(*) c FROM transactions").get().c;
   if (n > 0) return bad(res, "data exists");
@@ -92,6 +133,7 @@ api.post("/demo", (req, res) => {
 });
 
 api.get("/bootstrap", (req, res) => {
+  const currency = getCurrencyBootstrapState(db);
   res.json({
     settings: {
       currencySymbol: getSetting("currency_symbol", "¥"),
@@ -102,6 +144,7 @@ api.get("/bootstrap", (req, res) => {
       aiKey: getSetting("ai_key", ""),
       aiExtraPrompt: getSetting("ai_extra_prompt", ""),
       aiRequireConfirmation: getSetting("ai_require_confirmation", "1") !== "0",
+      reportingCurrency: currency.reportingCurrency,
       ...readBackupSettings(),
     },
     accounts: accountsWithBalances(),
@@ -113,6 +156,9 @@ api.get("/bootstrap", (req, res) => {
       .map((r) => r.name),
     groups: groupsWithCategories(),
     currentMonth: currentMonth(),
+    currencyMigrationRequired: currency.currencyMigrationRequired,
+    supportedCurrencies: currency.supportedCurrencies,
+    enabledCurrencies: currency.enabledCurrencies,
   });
 });
 
@@ -126,6 +172,7 @@ api.get("/settings", (req, res) => {
     aiKey: getSetting("ai_key", ""),
     aiExtraPrompt: getSetting("ai_extra_prompt", ""),
     aiRequireConfirmation: getSetting("ai_require_confirmation", "1") !== "0",
+    reportingCurrency: getCurrencyBootstrapState(db).reportingCurrency,
     ...readBackupSettings(),
   });
 });

@@ -8,6 +8,7 @@ import {
   todayYmd,
 } from "./db.mjs";
 import { accountBalances } from "./engine.mjs";
+import { CURRENCY_MIGRATION_LOCK_ERROR, isCurrencyMigrationRequired } from "./currency-state.mjs";
 
 const MAX_ITERATIONS = 10;
 const MAX_TOOL_RESULT_CHARS = 4000;
@@ -258,6 +259,13 @@ function execRead(sql) {
 }
 
 function execWrite(sql) {
+  if (isCurrencyMigrationRequired(db)) {
+    return JSON.stringify({
+      ok: false,
+      error: CURRENCY_MIGRATION_LOCK_ERROR,
+      code: CURRENCY_MIGRATION_LOCK_ERROR,
+    });
+  }
   try {
     const info = db.prepare(sql).run();
     return JSON.stringify({ ok: true, changes: info.changes });
