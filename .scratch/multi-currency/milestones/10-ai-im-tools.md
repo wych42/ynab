@@ -2,7 +2,7 @@
 
 > Milestone：10
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：补齐投资账户的原币工作流
 >

@@ -90,6 +90,7 @@ import {
 } from "./currency-ledger.mjs";
 import { createFxModule, isFxError, FxProviderError } from "./fx.mjs";
 import { createReportsModule, isReportsError } from "./reports.mjs";
+import { createInvestmentModule, isInvestmentError } from "./investment.mjs";
 
 export const api = express.Router();
 
@@ -117,6 +118,7 @@ function requestCurrency(req) {
 
 const fxModule = createFxModule({ db, today: todayYmd, nowIso });
 const reportsModule = createReportsModule({ db, fx: fxModule });
+const investmentModule = createInvestmentModule({ db });
 
 function sendFxError(res, error) {
   if (!isFxError(error)) throw error;
@@ -127,6 +129,13 @@ function sendFxError(res, error) {
 function sendReportsError(res, error) {
   if (isReportsError(error) || isAccountCurrencyError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  throw error;
+}
+
+function sendInvestmentError(res, error) {
+  if (isInvestmentError(error)) {
+    return res.status(error.status || 400).json({ error: error.code, code: error.code, message: error.message });
   }
   throw error;
 }
@@ -1220,6 +1229,19 @@ api.get("/reports/net-worth", async (req, res) => {
     res.json(report);
   } catch (e) {
     return sendReportsError(res, e);
+  }
+});
+
+api.get("/investments/:id", (req, res) => {
+  try {
+    const view = investmentModule.getInvestmentAccount({
+      accountId: req.params.id,
+      asOf: req.query.asOf,
+      months: req.query.months,
+    });
+    res.json(view);
+  } catch (e) {
+    return sendInvestmentError(res, e);
   }
 });
 

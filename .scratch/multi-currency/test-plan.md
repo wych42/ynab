@@ -93,8 +93,8 @@
 | Currency Ledger Module | `server/currency-ledger.test.mjs` | 已完成 | Module 27 tests；合并 Route 与页面后 targeted 85 tests；全量 469 tests；双腿、RTA、原子回滚、分类保护和安全整数通过 |
 | FX Module 与 Provider | `server/fx.test.mjs`、`server/fx.provider-contract.test.mjs`、`server/routes.fx.test.mjs`、`src/pages/SettingsPage.fx.test.tsx` | 已完成 | Node 20；验收修正后 targeted 76 tests；全量 60 files、521 tests；网络错误归一化、空刷新失败、缓存边界校验和 DELETE 同级校验通过 |
 | 原币报表与统一净资产 | `server/reports.native-currency.test.mjs`、`server/reports.currency.test.mjs` | 已完成 | targeted 23 tests；全量 540 tests；家庭手算、按账户舍入、余额符号、历史月末、来源元数据、开始日期、缺率和 memoization 通过 |
-| HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 部分完成 | 预算、原币报表、统一净资产、跨币种转账和 FX Route 通过；投资专属接口等待后续里程碑 |
-| React 页面 | 现有页面测试及新增币种页面测试 | 部分完成 | Budget、原币收支、统一净资产、交易页、账户交易页和 Settings 汇率区通过；已覆盖缺率隐藏总数、历史缺口、stale response、跨币种转账和 JPY 精度。投资页面待后续里程碑 |
+| HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 部分完成 | 预算、原币报表、统一净资产、跨币种转账、FX 和投资 Route 通过；AI 与 IM 类型化写入等待后续里程碑 |
+| React 页面 | 现有页面测试及新增币种页面测试 | 已完成 | Budget、原币收支、统一净资产、交易页、账户交易页、Settings 汇率区和投资摘要通过；已覆盖缺率隐藏总数、历史缺口、stale response、跨币种转账、更新估值和 JPY 精度 |
 | AI 与 IM 写入 | `server/ai.currency-tools.test.mjs` 及现有 IM 测试 | 未开始 | 类型化工具、确认和 SQL 保护结果 |
 | 生产库副本演练 | 本文件的迁移验收清单 | 未开始 | 脱敏核对表、备份与恢复记录 |
 | 浏览器手工验收 | 本文件的家庭使用场景 | 未开始 | 逐项勾选记录与截图 |
@@ -214,7 +214,7 @@ Schema 升级和用户确认的数据变换分开测试：
 
 事务原子性使用真实 SQLite 验证。在第二条转账腿写入时人为触发数据库错误，随后确认第一条腿、`pair_id` 和预算副作用都没有残留。编辑或删除任一转账腿时，继续运行现有成对更新与成对删除回归，禁止产生孤腿。
 
-对账测试分别覆盖 CNY、JPY 和投资跟踪账户。调整金额必须使用账户币种；投资估值调整改变账户余额并进入净资产，同时从普通 Income v Expense 排除。
+对账测试分别覆盖 CNY、JPY 和投资跟踪账户。调整金额必须使用账户币种；差额只按估值日当天及之前、且不早于账户开始日的流水计算，未来交易不能提前吞掉估值调整。投资估值调整改变账户余额并进入净资产，同时从普通 Income v Expense 排除。
 
 ## FX Module 只相信规范化记录
 

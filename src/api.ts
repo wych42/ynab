@@ -1,6 +1,7 @@
 import type {
   Bootstrap,
   BudgetData,
+  InvestmentAccountView,
   NetWorthReport,
   ReportsData,
   Tx,
@@ -169,6 +170,13 @@ export const api = {
   deleteAccount: (id: string) => req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "DELETE" }),
   accountRegister: (id: string) =>
     req<{ account: Account & { balance: number }; transactions: Tx[] }>(`/api/accounts/${id}/transactions`),
+  investmentAccount: (id: string, params: { months: number; asOf: string }) => {
+    const q = new URLSearchParams({
+      months: String(params.months),
+      asOf: params.asOf,
+    });
+    return req<InvestmentAccountView>(`/api/investments/${encodeURIComponent(id)}?${q.toString()}`);
+  },
   reconcile: (accountId: string, body?: { statementBalance?: number; markCleared?: boolean }) =>
     req<{ ok: true; adjustment: number | null }>(`/api/reconcile/${accountId}`, {
       method: "POST",

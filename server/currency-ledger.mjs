@@ -459,13 +459,20 @@ export function reconcileAccount(database, input = {}) {
   const acc = getAccount(database, input.accountId, { notFoundCode: "not_found", notFoundMessage: "not found" });
   const statement = parseStatementBalance(input.statementBalance);
   const markCleared = !!input.markCleared;
-  const asOfDate = input.asOfDate || utcToday();
+  const asOfDate = parseDate(input.asOfDate || utcToday());
   let adjustment = null;
   const run = database.transaction(() => {
     if (statement !== undefined) {
+      const start = acc.starting_balance_date || null;
       const calc =
         acc.starting_balance +
-        database.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE account_id=? AND is_start=0").get(acc.id).s;
+        database
+          .prepare(
+            `SELECT COALESCE(SUM(amount),0) s FROM transactions
+             WHERE account_id=? AND is_start=0 AND date<=?
+               AND (? IS NULL OR date>=?)`
+          )
+          .get(acc.id, asOfDate, start, start).s;
       if (statement !== calc) {
         adjustment = statement - calc;
         database

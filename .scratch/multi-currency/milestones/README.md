@@ -26,8 +26,8 @@
 | [统一交易和换汇写入](./06-currency-ledger.md) | Currency Ledger Module 和跨币种转账 | implemented | targeted 85 tests；全量 469 tests；双腿原子性、分类保护和页面精度通过 |
 | [建立可替换的汇率模块](./07-fx-module.md) | Provider、缓存、人工覆盖和离线行为 | implemented | 验收修正后 targeted 76 tests；全量 60 files、521 tests；typecheck 和 build 通过 |
 | [交付统一净资产报表](./08-reporting-net-worth.md) | 当前与历史净资产完整纵切 | implemented | 验收修正后 targeted 23 tests；全量 63 files、540 tests；历史来源和缺口通过 |
-| [补齐投资账户工作流](./09-investment-workflow.md) | 原币投资余额、估值调整和净资产联动 | ready-for-agent | 统一净资产报表已完成并通过验收 |
-| [收紧 AI 与 IM 写入](./10-ai-im-tools.md) | 类型化财务工具和只读 SQL | blocked | 等待统一财务 Interface |
+| [补齐投资账户工作流](./09-investment-workflow.md) | 原币投资余额、估值调整和净资产联动 | implemented | 验收修正后 targeted 57 tests；全量 66 files、559 tests；未来交易不污染估值日对账 |
+| [收紧 AI 与 IM 写入](./10-ai-im-tools.md) | 类型化财务工具和只读 SQL | ready-for-agent | 投资账户与统一财务 Interface 已完成并通过验收 |
 | [完成文档和发布验收](./11-release-readiness.md) | 文档、演示数据、迁移演练和完整验收 | blocked | 等待全部功能里程碑 |
 
 ## 状态更新规则

@@ -43,7 +43,7 @@ function txCount(accountId) {
 
 // 各用例独立账户，互不干扰
 const accEq = createAccount({ name: "对账-金额一致", type: "cash", currencyCode: "CNY", startingBalance: 10000 });
-insertTx(accEq, { date: "2026-08-10", payee: "已清支出", amount: -3000 }); // 计算=7000
+insertTx(accEq, { date: todayYmd(), payee: "已清支出", amount: -3000 }); // 计算=7000
 
 const accPos = createAccount({ name: "对账-多出", type: "cash", currencyCode: "CNY", startingBalance: 10000 }); // 计算=10000
 

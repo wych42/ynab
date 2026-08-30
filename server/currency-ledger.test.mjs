@@ -542,6 +542,47 @@ describe("reconcileAccount", () => {
     expect(result.adjustment).toBeNull();
     expect(thrown(() => changeAccountCurrency(db, cny, "USD"))).toBeTruthy();
   });
+
+  it("keeps CNY and JPY current-dated adjustments and ignores later rows when valuing asOfDate", () => {
+    const cny = createAccount({
+      name: "CNY as-of rec",
+      type: "cash",
+      currencyCode: "CNY",
+      startingBalance: 10000,
+      startingDate: `${MONTH}-01`,
+    });
+    postTransaction(db, { accountId: cny, date: `${MONTH}-10`, amount: -3000, payeeName: "past spend" });
+    postTransaction(db, { accountId: cny, date: `${MONTH}-25`, amount: -2000, payeeName: "future spend" });
+    const cnyResult = reconcileAccount(db, {
+      accountId: cny,
+      statementBalance: 7500,
+      markCleared: false,
+      asOfDate: `${MONTH}-20`,
+    });
+    expect(cnyResult.adjustment).toBe(500);
+    expect(
+      db.prepare("SELECT amount, date FROM transactions WHERE account_id=? AND is_reconcile_adjustment=1").get(cny)
+    ).toEqual({ amount: 500, date: `${MONTH}-20` });
+
+    const jpy = createAccount({
+      name: "JPY as-of rec",
+      type: "cash",
+      currencyCode: "JPY",
+      startingBalance: 1000,
+      startingDate: `${MONTH}-01`,
+    });
+    postTransaction(db, { accountId: jpy, date: `${MONTH}-25`, amount: 100, payeeName: "future yen" });
+    const jpyResult = reconcileAccount(db, {
+      accountId: jpy,
+      statementBalance: 1000,
+      markCleared: false,
+      asOfDate: `${MONTH}-20`,
+    });
+    expect(jpyResult.adjustment).toBeNull();
+    expect(
+      db.prepare("SELECT COUNT(*) c FROM transactions WHERE account_id=? AND is_reconcile_adjustment=1").get(jpy).c
+    ).toBe(0);
+  });
 });
 
 describe("CurrencyLedgerError shape", () => {

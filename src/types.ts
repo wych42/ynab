@@ -283,6 +283,27 @@ export type NetWorthReport =
       netWorthMinor: null;
     });
 
+export type InvestmentHistoryPoint = {
+  month: string;
+  asOf: string;
+  balanceMinor: number;
+};
+
+export type InvestmentAccountView = {
+  accountId: string;
+  name: string;
+  currencyCode: string;
+  asOf: string;
+  months: number;
+  balanceMinor: number;
+  contributionsMinor: number;
+  withdrawalsMinor: number;
+  netContributionsMinor: number;
+  balanceChangeMinor: number;
+  latestValuationDate: string | null;
+  history: InvestmentHistoryPoint[];
+};
+
 export interface ChatSession {
   id: string;
   title: string;

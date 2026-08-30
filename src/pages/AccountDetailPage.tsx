@@ -19,7 +19,8 @@ import { parseAmountToMinor } from "../money";
 import { Btn, Modal, Spinner, Field, inputCls } from "../components/ui";
 import { AmountInput, CategorySelect, PayeeSelect, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, parseOptionalMinor, type FormState } from "../components/txEdit";
 import { ACCOUNT_TYPE_LABELS } from "./AccountsPage";
-import type { Account, Tx } from "../types";
+import { InvestmentAccountSummary } from "./InvestmentAccountSummary";
+import type { Account, InvestmentAccountView, Tx } from "../types";
 
 export function AccountDetailPage({ id }: { id: string }) {
   const { boot, t, lang, refreshBoot, toast } = useApp();
@@ -32,7 +33,12 @@ export function AccountDetailPage({ id }: { id: string }) {
   const [editForm, setEditForm] = useState<FormState>(() => emptyForm());
   const [search, setSearch] = useState("");
   const [reconciling, setReconciling] = useState(false);
+  const [summary, setSummary] = useState<InvestmentAccountView | null | undefined>(undefined);
   const saveRef = useRef(false);
+  const requestGen = useRef(0);
+  const accMeta = boot?.accounts.find((a) => a.id === id);
+  const isInvestmentAccount = accMeta?.type === "investment";
+  const timezone = boot?.settings.timezone;
 
   // 新建表单的日期按系统配置的时区校正
   useEffect(() => {
@@ -45,15 +51,41 @@ export function AccountDetailPage({ id }: { id: string }) {
     });
   }, [boot?.settings.timezone]);
 
-  const load = useCallback(async () => {
-    setReg(await api.accountRegister(id));
-  }, [id]);
+  const load = useCallback(async (opts?: { reset?: boolean }) => {
+    const gen = ++requestGen.current;
+    const requestedId = id;
+    if (opts?.reset) {
+      setReg(null);
+      if (isInvestmentAccount) setSummary(undefined);
+      else setSummary(null);
+    }
+
+    const registerP = api.accountRegister(requestedId);
+    const summaryP = isInvestmentAccount
+      ? api.investmentAccount(requestedId, { months: 12, asOf: todayIso(timezone) })
+      : Promise.resolve(null);
+
+    const [regSettled, summarySettled] = await Promise.allSettled([registerP, summaryP]);
+    if (requestGen.current !== gen) return;
+    if (regSettled.status === "fulfilled") setReg(regSettled.value);
+    if (!isInvestmentAccount) {
+      setSummary(null);
+      return;
+    }
+    if (
+      summarySettled.status === "fulfilled" &&
+      summarySettled.value &&
+      summarySettled.value.accountId === requestedId
+    ) {
+      setSummary(summarySettled.value);
+    } else if (opts?.reset) {
+      setSummary(null);
+    }
+  }, [id, isInvestmentAccount, timezone]);
 
   useEffect(() => {
-    load().catch(() => {});
+    load({ reset: true }).catch(() => {});
   }, [load]);
-
-  const accMeta = boot?.accounts.find((a) => a.id === id);
   const isCredit = accMeta ? ["creditCard", "lineOfCredit"].includes(accMeta.type) : false;
   const currencyCode = reg?.account.currencyCode ?? accMeta?.currencyCode ?? null;
 
@@ -70,6 +102,7 @@ export function AccountDetailPage({ id }: { id: string }) {
   }, [reg, search]);
 
   if (!boot || !reg) return <Spinner />;
+  if (isInvestmentAccount && summary === undefined) return <Spinner />;
 
   const label = ACCOUNT_TYPE_LABELS[reg.account.type];
   const clearedBalance =
@@ -163,7 +196,7 @@ export function AccountDetailPage({ id }: { id: string }) {
             </div>
             <div className="flex items-center gap-2">
               <Btn onClick={() => setReconciling(true)}>
-                <Check size={14} /> {t("account_reconcile")}
+                <Check size={14} /> {t(isInvestmentAccount ? "account_updateValuation" : "account_reconcile")}
               </Btn>
               {!isCredit && (
                 <Btn onClick={async () => {
@@ -196,6 +229,7 @@ export function AccountDetailPage({ id }: { id: string }) {
         {!accMeta?.on_budget && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-700">{t("tx_offbudgetHint")}</p>
         )}
+        {isInvestmentAccount && summary && <InvestmentAccountSummary view={summary} />}
       </div>
 
       {/* Toolbar */}
@@ -249,6 +283,7 @@ export function AccountDetailPage({ id }: { id: string }) {
           balance={reg.account.balance}
           currencyCode={currencyCode}
           unclearedCount={unclearedCount}
+          valuation={isInvestmentAccount}
           onClose={() => setReconciling(false)}
           onDone={async () => {
             await Promise.all([load(), refreshBoot()]);
@@ -366,6 +401,7 @@ function ReconcileModal({
   balance,
   currencyCode,
   unclearedCount,
+  valuation = false,
   onClose,
   onDone,
 }: {
@@ -373,6 +409,7 @@ function ReconcileModal({
   balance: number;
   currencyCode?: string | null;
   unclearedCount: number;
+  valuation?: boolean;
   onClose: () => void;
   onDone: () => Promise<void>;
 }) {
@@ -410,12 +447,12 @@ function ReconcileModal({
   };
 
   return (
-    <Modal title={t("rec_title")} onClose={onClose}>
+    <Modal title={t(valuation ? "rec_valuationTitle" : "rec_title")} onClose={onClose}>
       <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
         <span>{t("rec_currentBalance")}</span>
         <span className="num font-semibold text-slate-900">{formatAccountMoney(balance, currencyCode, lang)}</span>
       </div>
-      <Field label={t("rec_statement")}>
+      <Field label={t(valuation ? "rec_marketValue" : "rec_statement")}>
         <input
           autoFocus
           className={`${inputCls} num text-right`}
@@ -426,7 +463,9 @@ function ReconcileModal({
       </Field>
       {diff !== null && diff !== 0 && (
         <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          {t("rec_diffHint", { amount: formatAccountMoney(diff, currencyCode, lang) })}
+          {t(valuation ? "rec_valuationDiffHint" : "rec_diffHint", {
+            amount: formatAccountMoney(diff, currencyCode, lang),
+          })}
         </p>
       )}
       {unclearedCount > 0 && (
