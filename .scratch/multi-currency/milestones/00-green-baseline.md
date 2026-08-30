@@ -2,7 +2,7 @@
 
 > Milestone：00
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：none
 >
@@ -14,6 +14,7 @@
 
 ## 执行要求
 
+- 仓库根目录和执行目录都是 `/Users/chichi/projects/github.com/iamshaynez/xiaowen-ynab`。
 - 修改前完整阅读仓库根目录 `AGENTS.md`、[里程碑总表](./README.md)、[产品方案](../plan.md) 和[测试计划](../test-plan.md)。
 - 你负责执行本文件列出的全部测试命令，并在最终报告中保留每条命令的退出结果。协调者不会代跑测试。
 - 如果现有测试失败，先保存失败证据，再用最小改动修复测试基础设施，并重新执行完整质量门槛。
@@ -50,8 +51,9 @@ git status --short
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 验收：待填写
-- Commit：待填写
+- 启动日期：2026-08-31
+- Grok session：`01a0536b-12bc-7cb2-8dd3-091309f04eef`，模型 `grok-4.6`，reasoning effort `xhigh`
+- 首次失败：Node 20 加载了按 Node 25 编译的 `better-sqlite3`，原生模块 ABI 从 141 变为 115，23 个测试文件因此无法启动。Grok 使用 Node 20 重建本地依赖后继续验证；`node_modules` 没有进入 diff。
+- GREEN：定向验收日志包含六个 `completed` 命令事件和零个失败事件。Node 20.20.2 下 typecheck 通过，37 个测试文件和 248 个测试通过，production build 通过，`git diff --check` 通过。
+- 验收：仓库改动只有 CI 在 test 后增加 build，以及本里程碑的进度记录；没有修改业务代码、测试断言、Schema 或页面。首轮被 deny 规则拦截的命令事件没有作为验收证据，最终证据来自同一 session 的一次定向纠正。
+- Commit：本里程碑提交 `test: establish multi-currency baseline`

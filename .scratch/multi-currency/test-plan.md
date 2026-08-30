@@ -22,16 +22,11 @@
 - 后端测试可以在临时目录中创建真实 SQLite 数据库。
 - Route 测试通过随机本机端口启动 Express，再使用原生 `fetch` 调用 HTTP Interface。
 - React 页面使用 jsdom、Testing Library 和 `fireEvent` 验证界面行为。
-- CI 使用 Node 20，依次运行 `npm ci`、`npm run typecheck` 和 `npm test`。
-- `npm run build` 当前不在 CI 中，只能靠本地检查。多币种实现的首个 PR 应把它加入 CI。
+- CI 使用 Node 20，依次运行 `npm ci`、`npm run typecheck`、`npm test` 和 `npm run build`。
 
 2026-08-30 在本机 Node 25.8.1 下执行了现有 `npm test`。解除沙箱的本机端口限制后，结果为 35 个测试文件通过、2 个失败，242 个测试通过、6 个失败。六个失败都来自现有 `BudgetPage` 测试，错误为 `localStorage.clear is not a function`。这些失败尚未证明与业务代码有关，也不属于多币种改动。
 
-开始多币种实现前，先在 CI 同款 Node 20 下重跑现有套件并留下结果：
-
-- Node 20 下全绿时，把这次结果记为功能分支基线。
-- Node 20 下仍有六个失败时，先单独修正 jsdom 的 Storage 测试环境，再建立绿色基线。
-- 绿色基线建立前不写多币种实现，避免新旧失败混在一起。
+2026-08-31 由 Grok 4.6 xhigh 在 Node 20.20.2 下建立功能分支基线。typecheck 通过，37 个测试文件和 248 个测试通过，production build 通过。Node 25 下出现过的六个 Storage 失败没有在 Node 20 复现，因此没有修改测试代码。首次测试启动失败来自本地 `better-sqlite3` 的 Node 25 ABI；使用 Node 20 重建本地依赖后恢复，CI 的 `npm ci` 不受影响。
 
 ## 测试遵循的规则
 
@@ -90,7 +85,7 @@
 
 | 测试面 | 主要测试文件 | 状态 | 完成证据 |
 | --- | --- | --- | --- |
-| 实施前绿色基线 | 现有全量套件 | 进行中 | 由 Grok 4.6 xhigh 建立 Node 20 基线并补上 CI build 门槛 |
+| 实施前绿色基线 | 现有全量套件 | 已完成 | Node 20.20.2；37 个文件和 248 个测试通过；typecheck、build 和 CI 门槛通过 |
 | Money Module 与币种目录 | `server/money.test.mjs`、`src/money.test.ts` | 未开始 | RED、GREEN 和全量回归记录 |
 | 旧数据库迁移 | `server/db.currency-migration.test.mjs` | 未开始 | 迁移矩阵与恢复演练记录 |
 | 币种预算隔离 | `server/engine.currency-budget.test.mjs` | 未开始 | CNY 与 SGD 隔离、家庭 CNY 合并结果 |
@@ -314,7 +309,7 @@ Route 测试继续启动真实 Express，但共享的测试 Server 必须等待 
 | Investment | 按原币显示余额、净投入、净取回和估值日期，不把余额变化写成投资收益 |
 | Chat | 类型化写入继续经过确认，待确认内容明确显示账户币种和两端金额 |
 
-现有 BudgetPage 测试的 Storage 环境需要在绿色基线阶段收口。建议把 localStorage 初始化放入统一测试 Setup，页面用例不再各自依赖 Node 全局实现。该修正应单独提交，避免与多币种行为测试混在一个 RED 阶段。
+现有 BudgetPage 测试的 Storage 问题只在 Node 25.8.1 下出现过，Node 20.20.2 的绿色基线没有复现。当前不修改测试 Setup；如果后续支持 Node 25，再用独立故障复现和修复处理，避免混入多币种行为测试。
 
 首版不以引入 Playwright 作为自动化门槛。当前逻辑可以由 Module、真实 SQLite、HTTP 和组件测试覆盖，完整浏览器流程进入发布前手工验收。后续若多次出现组件测试抓不到的路由或状态同步回归，再单独引入浏览器 E2E。
 

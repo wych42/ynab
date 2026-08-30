@@ -2,7 +2,7 @@
 
 > Milestone：01
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：建立绿色基线和 CI 门槛
 >
