@@ -266,7 +266,7 @@ const zh = {
   settings_extraPromptHint:
     "保存后会嵌入智能助手（含 IM 渠道）的系统提示词，作为用户自定义上下文优先遵循。留空则不追加。",
   settings_aiRequireConfirm: "写操作需二次确认",
-  settings_aiRequireConfirmHint: "开启时，网页与微信/Telegram 的所有数据修改都会先弹出待确认卡片（需点“确认执行”或回复“确认”）；关闭后将直接执行并立即返回结果，适合信任模型执行、追求效率的场景。关闭后误操作不可撤销。",
+  settings_aiRequireConfirmHint: "开启时，网页和 IM 会先给出这次改动的摘要，等你确认后再写入，不会把新的写 SQL 亮出来。关闭后仍走同一套业务校验，只是不再问第二遍。关闭后误操作不可撤销。",
   settings_aiRequireConfirmDisableTip: "关闭后智能助手的所有写操作将直接执行，不再二次确认。确定要关闭吗？",
   settings_aiSave: "保存 AI 配置",
   settings_testConn: "测试连接",
@@ -604,7 +604,7 @@ const en: typeof zh = {
   settings_extraPromptHint:
     "Saved into the assistant's system prompt (web + IM). The assistant follows this as your custom context. Leave empty to skip.",
   settings_aiRequireConfirm: "Require confirmation for writes",
-  settings_aiRequireConfirmHint: "When on, every data-changing action shows a confirmation card on web and asks for “confirm” on WeChat/Telegram before it runs. When off, writes execute immediately and return the result — faster but irreversible.",
+  settings_aiRequireConfirmHint: "When on, the web app and IM channels show a summary of the change and wait for you to confirm. They do not show newly generated write SQL. When off, the same business checks still run; the write happens immediately and cannot be undone.",
   settings_aiRequireConfirmDisableTip: "After turning off, all assistant writes will execute without asking. Are you sure you want to disable confirmation?",
   settings_aiSave: "Save AI config",
   settings_testConn: "Test connection",

@@ -2,7 +2,7 @@
 
 > Milestone：11
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：让 AI 和 IM 使用类型化财务工具
 >
@@ -42,10 +42,10 @@ git status --short
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 迁移演练：待填写
-- 浏览器验收：待填写
-- 验收：待填写
-- Commit：待填写
+- Grok session：`01a054a1-f058-7b60-bc71-534fca6e2db7`，模型 `grok-4.6`，reasoning effort `xhigh`
+- RED：`server/demo.currency.test.mjs` 12 tests 中 11 failed。注入库上看不到家庭多币种账户、汇总币种、SGD 分配、跨币种 pair、EUR 原始金额、人工汇率；回滚测试未抛错。当时的 `loadDemoData` 仍只往全局库写单币种演示，并且忽略注入的 database/clock。
+- GREEN：`server/demo.currency.test.mjs` 12 passed。目标文件 5 files / 51 tests 通过。全量 68 files / 597 tests 通过。typecheck 与 production build 通过。演示数据经 `createAccountRecord` / `postTransaction` / `postTransfer` / `reconcileAccount` / `assignBudget` / `setGoal` / FX `putManualRate` 写入。估值日 2026-08-31 净资产 17,381,760 CNY minor。
+- 迁移演练：脚本 `.scratch/multi-currency/scripts/rehearse-currency-migration.mjs`，源副本 `/private/tmp/xiaowen-ynab-m11/source-snapshot.sqlite`，父目录 `/private/tmp/xiaowen-ynab-m11/rehearsal`，本次运行目录 `/private/tmp/xiaowen-ynab-m11/rehearsal/run-7bD9j2`。父目录里更早的固定产物和另一次独立运行 `run-fwiFAF` 仍在，没有被覆盖。选择 CNY，金额不缩放；迁移后工作库与恢复库 `PRAGMA integrity_check` 均为 ok。脱敏细节见 [release-readiness.md](../release-readiness.md)。
+- 浏览器验收：协调者使用两个全新临时数据库完成。正常实例验证默认与可选币种、家庭共享 CNY RTA、CNY/SGD 隔离、实际换汇、外币原始金额、投资、统一净资产和中英文 JPY 精度；断网实例验证原币操作、缓存净资产、缺率隐藏总数和人工补率恢复。控制台无 warning/error。详细数值见 [release-readiness.md](../release-readiness.md)。
+- 验收：代码、自动化、API smoke、可重复副本迁移/恢复演练和浏览器家庭流程全部通过。完整 diff 没有越过 M11 范围，真实 `data/budget.db` 未被替换或修改。
+- Commit：本里程碑提交 `feat: finish multi-currency workflows`

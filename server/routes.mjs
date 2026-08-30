@@ -6,7 +6,6 @@ import {
   nowIso,
   getSetting,
   setSetting,
-  loadDemoData,
   isCreditType,
   todayYmd,
   getTimezone,
@@ -99,6 +98,7 @@ import {
 import { createFxModule, isFxError, FxProviderError } from "./fx.mjs";
 import { createReportsModule, isReportsError } from "./reports.mjs";
 import { createInvestmentModule, isInvestmentError } from "./investment.mjs";
+import { loadDemoData } from "./demo.mjs";
 
 export const api = express.Router();
 
@@ -245,7 +245,7 @@ api.use((req, res, next) => {
 api.post("/demo", (req, res) => {
   const n = db.prepare("SELECT COUNT(*) c FROM transactions").get().c;
   if (n > 0) return bad(res, "data exists");
-  loadDemoData();
+  loadDemoData({ database: db });
   res.json({ ok: true });
 });
 

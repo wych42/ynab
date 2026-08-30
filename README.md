@@ -2,7 +2,7 @@
 
 # 小文预算 · Xiaowen Budget
 
-**本地优先的 YNAB 式零基预算应用，内置 AI 记账助手**
+**本地优先的 YNAB 式零基预算，支持多币种账本和 AI 记账助手**
 
 [![CI](https://github.com/iamshaynez/xiaowen-ynab/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/iamshaynez/xiaowen-ynab/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-20%2B-brightgreen)](https://nodejs.org)
@@ -14,34 +14,56 @@
 
 ---
 
-小文预算是一套完全运行在你自己机器上的零基预算（Zero-based Budgeting）工具：账本、预算、报表、AI 助手全部落在一台设备上的单个 SQLite 文件里。它遵循 YNAB 四法则——给每一块钱一个任务、拥抱真实开支、灵活应变、关注资金账龄，并把「AI 直接替你查账、记账」作为一等公民：AI 助手通过受控 SQL 工具读写你的本地数据库，所有写操作必须经你确认；你还可以把同一个助手接入 Telegram 与个人微信，随时随地在聊天软件里记账。
+小文预算跑在你自己的电脑上。账本、预算、报表和 AI 助手都落在同一个 SQLite 文件里，一份本地数据库就是一个家庭的共享预算空间。
+
+它沿用 YNAB 四法则：给每一块钱一个任务，拥抱真实开支，灵活应变，关注资金账龄。每种币种有一份独立预算账本；同一币种的账户共用一份待分配金额（Ready to Assign）。你也可以把同一个助手接到 Telegram 或个人微信，在聊天里记账。
+
+## 多币种
+
+内置币种是 CNY、USD、SGD、CAD、EUR、GBP、JPY。新家庭默认启用 CNY、USD、SGD、JPY、EUR；CAD 和 GBP 可以在设置里再打开。账户金额按该币种的最小单位保存，日元没有伪造的两位小数。
+
+同币种转账只填一端金额。跨币种换汇必须填银行真实的转出额和到账额，参考汇率只用来对照，不会替你填入账金额。
+
+界面上的「汇总币种」对应会计里的列报货币。统一净资产按估值日把各币种余额换算到汇总币种，只做报表，不会改写原币账本。汇率来源可以替换，默认用 Frankfurter v2 并固定欧洲央行（ECB）参考汇率；同一天如果有人工汇率，人工值优先。原币记账和预算不需要网络；缺汇率时，统一总数会隐藏，并列出缺了哪些币种对。
+
+投资账户是预算外的跟踪账户，目前只记录总价值和净投入，不管理持仓、成本和收益率。
+
+旧数据库第一次升级会先在本机备份，再让你选择旧账本的币种。只有全部旧金额都能被 100 整除时，才允许按日元缩放。
 
 ## 功能特性
 
 ### 预算
-- **待分配金额（Ready to Assign）**：收入进账后逐月分配到分类，直到归零
+- **待分配金额（Ready to Assign）**：收入进账后逐月分配到分类，直到归零。每个币种各自一份。
 - 按月分配、移动资金、弥补超支、一键复制上月预算
 - 分类目标：按目标日期储蓄 / 按余额目标储蓄，「一键分配至目标」自动补齐差额
 - 资金账龄（Age of Money）、超支与未分类交易提醒
 
 ### 账户
 - 支票 / 储蓄 / 现金 / 信用卡 / 信用额度 / 投资 / 房产 / 车辆 / 各类贷款等资产与负债类型
-- 预算内 / 预算外账户，支持关闭账户
+- 新建账户时选择内置币种；预算内 / 预算外账户，支持关闭账户
 - 信用卡消费自动从还款科目划扣额度，向信用卡转账即为还款
 
 ### 交易
-- 收入 / 支出 / 转账三合一录入；转账双分录自动配对，幂等不重不漏
+- 收入 / 支出 / 转账三合一录入；转账双分录自动配对
+- 外币消费可以同时记下商户原始金额和银行入账金额，预算只看入账金额
 - 批量分类、批量删除、快速清算、对账（reconcile）
-- 退款记回原支出分类，抵减支出而非计入收入
+- 退款记回原支出分类，用来抵掉这笔支出
 
 ### 报表
-- 净资产走势、收支趋势、支出构成、Top 商家、收入来源
+- 原币收支：收入、支出、分类构成按币种分开看
+- 统一净资产：按汇总币种查看当前和历史的资产、负债与净资产，并标明汇率日期和来源
+- 支出构成、Top 商家、收入来源
+
+### 投资
+- 按原币查看投资账户余额、净投入、净取回和最近估值日期
+- 通过对账把账户调到券商显示的总价值；估值调整进入净资产，不进入日常收支
 
 ### AI 助手
-- 对话式记账与查账：「记一笔午饭 35 元」「上个月餐饮花了多少」由 AI 生成 SQL 直接操作本地数据库
-- 兼容任意 OpenAI Chat Completions 接口的服务，Base URL / 模型名 / 密钥均可在设置页配置
-- 只读查询自由执行；**任何写入操作强制弹窗确认后才会执行**
-- 会话历史持久化；回复支持 Markdown 与 Mermaid 图表渲染
+- 对话式记账与查账，例如「记一笔午饭 35 元」「上个月餐饮花了多少」
+- 兼容任意 OpenAI Chat Completions 接口，Base URL / 模型名 / 密钥都在设置页配置
+- `run_sql` 只读。创建交易、转账、账户、预算、目标和对账走类型化工具，和网页同一套业务规则
+- 确认开关打开时，先显示这次改动的摘要，不会把新的写 SQL 亮给你看；关掉确认后仍会做业务校验，只是不再问第二遍
+- 会话历史持久化；回复支持 Markdown 与 Mermaid 图表
 
 ### IM 渠道
 - **Telegram Bot**：长轮询接入，配置 Bot Token 即用
@@ -57,8 +79,8 @@
 
 ### 其他
 - 可选密码登录（JWT 签发，恒定时间比较防时序侧信道）
-- 中英双语界面，自定义货币符号
-- 一键载入示例数据体验完整功能
+- 中英双语界面，按账户币种格式化金额
+- 一键载入示例数据，覆盖家庭人民币日常账户、信用卡、美元投资、新加坡元日常账户、日元现金和欧元零余额备用账户
 
 ## 技术栈
 
@@ -68,7 +90,7 @@
 | 后端    | Node.js 20+ · Express 4 · better-sqlite3                         |
 | 数据    | SQLite 单文件（WAL 模式）· 版本化迁移，启动即建表                |
 | 测试    | Vitest（服务端 node 环境 + 组件 jsdom 环境）                     |
-| CI      | GitHub Actions：typecheck + 全量测试                             |
+| CI      | GitHub Actions：typecheck + 全量测试 + production build          |
 
 ## 架构
 
@@ -78,22 +100,29 @@ flowchart LR
         UI["React 18 + Tailwind v4"]
     end
     subgraph api["Express API (:3001)"]
-        routes["routes.mjs — REST /api"]
-        engine["engine.mjs — 预算引擎"]
-        agent["ai.mjs — AI Agent + SQL 守卫"]
-        im["im/ — 渠道生命周期与路由"]
+        routes["routes.mjs"]
+        ledger["currency-ledger.mjs"]
+        engine["engine.mjs"]
+        fx["fx.mjs"]
+        reports["reports.mjs"]
+        agent["ai.mjs"]
+        im["im/"]
     end
     db[("SQLite · data/budget.db")]
-    llm["OpenAI 兼容 LLM 服务"]
+    llm["OpenAI 兼容 LLM"]
 
     UI -- "/api（Vite 开发代理）" --> routes
+    routes --> ledger --> db
     routes --> engine --> db
-    agent -- "run_sql（写需确认）" --> db
+    routes --> reports --> fx
+    fx --> db
+    agent -- "run_sql 只读" --> db
+    agent -- "类型化写入" --> ledger
     agent <-- "chat/completions" --> llm
     im --> agent
 ```
 
-同一套 Agent 会话层同时服务网页聊天与 IM 渠道；引擎中的预算计算（`goalNeed`、`ageOfMoney` 等）保持纯函数，可脱离数据库单测。
+网页、聊天和 IM 的财务写入都经过 Currency Ledger。预算计算（`goalNeed`、`ageOfMoney` 等）保持纯函数，可脱离数据库单测。
 
 ## 快速开始
 
@@ -151,11 +180,14 @@ APP_PASSWORD=your-password docker compose up -d --build
 
 ## 数据与安全
 
-- 所有数据保存在本机单个 SQLite 文件中（默认 `./data/budget.db`），没有任何遥测或云端依赖。
+- 所有数据保存在本机单个 SQLite 文件中（默认 `./data/budget.db`），没有遥测，原币记账也不依赖云端。
 - 启用 AI 功能后，账本 Schema、账户/分类快照及对话内容会发送给你自行配置的模型服务端点；请选择你信任的服务商。
-- AI 的 SQL 受多层守卫限制：仅允许单条语句，禁止 `ATTACH`/`PRAGMA`/`VACUUM`，聊天记录、设置、IM 渠道等内部表对模型不可见；且任何 `INSERT`/`UPDATE`/`DELETE` 都必须经用户确认。
+- AI 的 `run_sql` 只允许只读查询：单条语句，禁止 `ATTACH`/`PRAGMA`/`VACUUM`，聊天记录、设置、IM 渠道、汇率缓存等内部表对模型不可见。财务写入必须走类型化工具，和网页共用校验。
+- 打开「写操作需二次确认」时，助手先给出语义摘要，等你确认后再改库；关掉后仍经过业务校验，只是立即执行。
+- 自动汇率请求只带币种代码和日期，不发送账户名称、余额或流水。
 - 设置 `APP_PASSWORD` 后，除登录接口外的全部 API 均要求有效的 JWT（7 天有效期）。
-- 数据库文件请自行纳入备份策略——它就是你的全部账本。
+- 第一次把旧账本升到多币种时，系统会先写一份可重新打开的备份。出了问题就恢复这份备份，不要指望把新 Schema 直接降回去。
+- 数据库文件请自行纳入备份策略，它就是你的全部账本。
 
 ## 项目结构
 
@@ -167,17 +199,24 @@ APP_PASSWORD=your-password docker compose up -d --build
 │   ├── api.ts          # /api 的类型化客户端
 │   ├── store.tsx       # 应用级状态
 │   ├── i18n.ts         # 中英文案
+│   ├── money.ts        # 与后端共用的币种目录和金额规则
 │   └── format.ts       # 货币 / 日期格式化
 ├── server/             # Express 后端（ESM .mjs）
 │   ├── index.mjs       # HTTP 启动入口
 │   ├── routes.mjs      # REST /api 路由
-│   ├── engine.mjs      # 预算计算（纯函数优先）
-│   ├── ai.mjs          # AI Agent、SQL 工具循环与安全守卫
+│   ├── engine.mjs      # 分币种预算计算
+│   ├── currency-ledger.mjs  # 交易、转账、对账写入
+│   ├── fx.mjs          # 汇率缓存、人工覆盖、可替换 Adapter
+│   ├── reports.mjs     # 统一净资产
+│   ├── investment.mjs  # 投资跟踪账户视图
+│   ├── demo.mjs        # 一键演示数据
+│   ├── ai.mjs          # AI Agent、只读 SQL 与类型化工具
 │   ├── auth.mjs        # 密码登录 / JWT
 │   ├── migrations.mjs  # 版本化 Schema 迁移
 │   └── im/             # Telegram / 个人微信渠道适配与会话路由
+├── shared/             # 前后端共用的币种目录
 ├── data/               # SQLite 数据库文件（不入库）
-└── .github/workflows/  # CI（push / PR → dev）
+└── .github/workflows/  # CI（push / PR → dev：typecheck、test、build）
 ```
 
 ## 开发
@@ -190,14 +229,14 @@ APP_PASSWORD=your-password docker compose up -d --build
 | `npm run test:watch`    | 监视模式跑测试                  |
 | `npm run typecheck`     | `tsc -b --noEmit`               |
 
-本项目采用 TDD 工作流：先写失败测试，再写实现。服务端新逻辑必须带有同目录的 `*.test.mjs`，React 组件应有 `*.test.tsx` 覆盖核心行为。
+本项目采用 TDD 工作流：先写失败测试，再写实现。服务端新逻辑必须带有同目录的 `*.test.mjs`，React 组件应有 `*.test.tsx` 覆盖核心行为。合入 `dev` 的 PR 必须通过 typecheck、全量测试和生产构建。
 
 ## 参与贡献
 
 欢迎 Issue 与 PR：
 
 1. Fork 并从 `dev` 切出分支；
-2. 保证 `npm run typecheck` 与 `npm test` 通过（CI 对 `dev` 的 PR 强制绿检）；
+2. 保证 `npm run typecheck`、`npm test` 与 `npm run build` 通过（CI 对 `dev` 的 PR 强制绿检）；
 3. 提交信息遵循 `feat:` / `fix:` / `chore:` 约定式前缀。
 
 ## License

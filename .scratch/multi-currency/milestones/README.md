@@ -28,7 +28,7 @@
 | [交付统一净资产报表](./08-reporting-net-worth.md) | 当前与历史净资产完整纵切 | implemented | 验收修正后 targeted 23 tests；全量 63 files、540 tests；历史来源和缺口通过 |
 | [补齐投资账户工作流](./09-investment-workflow.md) | 原币投资余额、估值调整和净资产联动 | implemented | 验收修正后 targeted 57 tests；全量 66 files、559 tests；未来交易不污染估值日对账 |
 | [收紧 AI 与 IM 写入](./10-ai-im-tools.md) | 类型化财务工具和只读 SQL | implemented | 验收修正后 targeted 67 tests；全量 67 files、585 tests；非法参数、只读 SQL、确认队列和 IM 回归通过 |
-| [完成文档和发布验收](./11-release-readiness.md) | 文档、演示数据、迁移演练和完整验收 | ready-for-agent | 功能里程碑已全部完成并通过验收 |
+| [完成文档和发布验收](./11-release-readiness.md) | 文档、演示数据、迁移演练和完整验收 | implemented | 目标 51 tests；全量 68 files、597 tests；typecheck、build、可重复副本演练和浏览器验收通过 |
 
 ## 状态更新规则
 

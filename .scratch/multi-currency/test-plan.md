@@ -1,6 +1,6 @@
 # 多币种功能测试计划
 
-> 状态：测试设计已完成，自动化测试按实现里程碑推进中。
+> 状态：已完成。自动化、脱敏副本演练和浏览器手工验收均已通过。
 >
 > 更新日期：2026-08-31。
 >
@@ -96,8 +96,8 @@
 | HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 已完成 | 预算、原币报表、统一净资产、跨币种转账、FX、投资及 AI/IM 类型化确认 Route 通过 |
 | React 页面 | 现有页面测试及新增币种页面测试 | 已完成 | Budget、原币收支、统一净资产、交易页、账户交易页、Settings 汇率区和投资摘要通过；已覆盖缺率隐藏总数、历史缺口、stale response、跨币种转账、更新估值和 JPY 精度 |
 | AI 与 IM 写入 | `server/ai.currency-tools.test.mjs` 及现有 IM 测试 | 已完成 | targeted 7 files、67 tests；全量 67 files、585 tests；类型化写入、非法参数、确认队列、只读 SQL、币种摘要和 IM 会话回归通过 |
-| 生产库副本演练 | 本文件的迁移验收清单 | 未开始 | 脱敏核对表、备份与恢复记录 |
-| 浏览器手工验收 | 本文件的家庭使用场景 | 未开始 | 逐项勾选记录与截图 |
+| 生产库副本演练 | [release-readiness.md](./release-readiness.md) 与 `scripts/rehearse-currency-migration.mjs` | 已完成 | 每次在 `--work-dir` 下新建独立运行目录；源副本 SHA-256 不变；Schema 11 pending→complete；6/202/78/6 行数与主键指纹不变；CNY 不缩放；第二次确认 alreadyCompleted；迁移后工作库与恢复库 integrity_check=ok |
+| 浏览器手工验收 | [release-readiness.md](./release-readiness.md) | 已完成 | 默认与可选币种、家庭共享 CNY RTA、CNY/SGD 隔离、实际换汇、外币原始金额、投资、统一净资产、缺率恢复、断网缓存和中英文 JPY 精度通过；页面控制台无 warning/error |
 
 每个检查点完成后更新状态和证据。测试数量可以随实现调整，覆盖的行为和发布门槛不能减少。发现预期结果仍有歧义时，先把问题和建议选项写入 `open-questions.md`，确认主方案口径后再写测试。
 
