@@ -44,6 +44,7 @@ export interface Account {
 
 export interface Goal {
   category_id: string;
+  currency_code?: string;
   type: "monthly" | "targetBalance" | "targetByDate";
   target: number;
   target_month: string | null;
@@ -139,6 +140,7 @@ export interface BudGroup {
 
 export interface BudgetData {
   month: string;
+  currencyCode: string;
   months: string[];
   maxMonth: string;
   readyToAssign: number;
@@ -170,6 +172,7 @@ export interface Tx {
 }
 
 export interface ReportsData {
+  currencyCode: string;
   months: string[];
   income: { month: string; value: number }[];
   expense: { month: string; value: number }[];

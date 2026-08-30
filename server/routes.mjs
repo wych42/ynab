@@ -16,16 +16,18 @@ import {
   applyCurrencySettings,
   changeAccountCurrency,
   createAccountRecord,
+  AccountCurrencyError,
   isAccountCurrencyError,
   parseStartingBalanceMinor,
   presentAccount,
+  requireEnabledCurrency,
 } from "./account-currency.mjs";
 import {
   computeBudget,
-  listMonths,
   accountBalances,
   ageOfMoney,
   goalNeed,
+  buildNativeReport,
   reportsOverview,
 } from "./engine.mjs";
 import { addMonths, currentMonth } from "./db.mjs";
@@ -82,6 +84,31 @@ function sendAccountCurrencyError(res, error) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
   }
   throw error;
+}
+
+function requestCurrency(req) {
+  const query = req.query?.currency;
+  return requireEnabledCurrency(db, typeof query === "string" ? query : undefined);
+}
+
+function assertAssignmentTarget(categoryId, currencyCode) {
+  if (typeof categoryId !== "string" || !categoryId) {
+    throw new AccountCurrencyError("invalid_assignment_target", "invalid assignment target");
+  }
+  if (categoryId.startsWith("cc:")) {
+    const accountId = categoryId.slice(3);
+    const acc = db
+      .prepare(
+        `SELECT id FROM accounts
+         WHERE id=? AND type IN ('creditCard','lineOfCredit') AND on_budget=1 AND closed=0 AND currency_code=?`
+      )
+      .get(accountId, currencyCode);
+    if (!acc) throw new AccountCurrencyError("invalid_assignment_target", "invalid assignment target");
+    return;
+  }
+  if (!db.prepare("SELECT 1 FROM categories WHERE id=?").get(categoryId)) {
+    throw new AccountCurrencyError("invalid_assignment_target", "invalid assignment target");
+  }
 }
 
 function backupPayload(backup) {
@@ -579,18 +606,19 @@ function accountsWithBalances() {
 function groupsWithCategories() {
   const groups = db.prepare("SELECT * FROM category_groups ORDER BY sort_order").all();
   const cats = db.prepare("SELECT * FROM categories ORDER BY sort_order").all();
-  const goals = Object.fromEntries(db.prepare("SELECT * FROM goals").all().map((g) => [g.category_id, g]));
   return groups.map((g) => ({
     ...g,
-    categories: cats.filter((c) => c.group_id === g.id).map((c) => ({ ...c, goal: goals[c.id] || null })),
+    categories: cats.filter((c) => c.group_id === g.id).map((c) => ({ ...c, goal: null })),
   }));
 }
 
-function budgetPayload(month) {
-  const { months, byMonth } = computeBudget(month);
+function budgetPayload(month, currencyCode) {
+  const { months, byMonth } = computeBudget(month, currencyCode);
   const state = byMonth.get(month) || byMonth.get(months[months.length - 1]);
   if (!state) return null;
-  const goals = Object.fromEntries(db.prepare("SELECT * FROM goals").all().map((g) => [g.category_id, g]));
+  const goals = Object.fromEntries(
+    db.prepare("SELECT * FROM goals WHERE currency_code=?").all(currencyCode).map((g) => [g.category_id, g])
+  );
 
   let overspentTotal = 0;
   for (const id in state.available) if (state.available[id] < 0) overspentTotal += state.available[id];
@@ -627,8 +655,8 @@ function budgetPayload(month) {
     }));
 
   const ccAccounts = db
-    .prepare("SELECT id,name,type FROM accounts WHERE type IN ('creditCard','lineOfCredit') AND on_budget=1 AND closed=0 ORDER BY sort_order")
-    .all();
+    .prepare("SELECT id,name,type FROM accounts WHERE type IN ('creditCard','lineOfCredit') AND on_budget=1 AND closed=0 AND currency_code=? ORDER BY sort_order")
+    .all(currencyCode);
   if (ccAccounts.length) {
     groups.push({
       id: "__cc__",
@@ -641,13 +669,14 @@ function budgetPayload(month) {
   const uncategorizedCount = db
     .prepare(
       `SELECT COUNT(*) c FROM transactions t JOIN accounts a ON a.id=t.account_id
-       WHERE a.on_budget=1 AND t.category_id IS NULL AND t.transfer_account_id IS NULL
+       WHERE a.on_budget=1 AND a.currency_code=? AND t.category_id IS NULL AND t.transfer_account_id IS NULL
          AND t.is_start=0 AND t.is_reconcile_adjustment=0 AND substr(t.date,1,7)<=?`
     )
-    .get(month).c;
+    .get(currencyCode, month).c;
 
   return {
     month,
+    currencyCode,
     months,
     maxMonth: addMonths(currentMonth(), 12),
     readyToAssign: state.readyToAssign,
@@ -656,113 +685,148 @@ function budgetPayload(month) {
     overspentTotal,
     uncategorizedCount,
     groups,
-    ageOfMoney: ageOfMoney(),
+    ageOfMoney: ageOfMoney(currencyCode),
   };
 }
 
 api.get("/budget/:month", (req, res) => {
-  const p = budgetPayload(req.params.month);
-  if (!p) return bad(res, "bad month");
-  res.json(p);
+  try {
+    const currencyCode = requestCurrency(req);
+    const p = budgetPayload(req.params.month, currencyCode);
+    if (!p) return bad(res, "bad month");
+    res.json(p);
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.put("/budget/:month/category/:categoryId/assign", (req, res) => {
-  const { month, categoryId } = req.params;
-  const cents = Math.round(Number(req.body?.assigned));
-  if (!Number.isFinite(cents) || cents < 0) return bad(res, "invalid amount");
-  upsertAssignment(month, categoryId, cents);
-  res.json(budgetPayload(month));
+  try {
+    const currencyCode = requestCurrency(req);
+    const { month, categoryId } = req.params;
+    const cents = Math.round(Number(req.body?.assigned));
+    if (!Number.isFinite(cents) || cents < 0) return bad(res, "invalid amount");
+    upsertAssignment(month, categoryId, cents, currencyCode);
+    res.json(budgetPayload(month, currencyCode));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
-function upsertAssignment(month, categoryId, cents) {
+function upsertAssignment(month, categoryId, cents, currencyCode) {
+  assertAssignmentTarget(categoryId, currencyCode);
   db.prepare(
-    "INSERT INTO assignments(month,category_id,assigned) VALUES(?,?,?) ON CONFLICT(month,category_id) DO UPDATE SET assigned=excluded.assigned"
-  ).run(month, categoryId, cents);
+    "INSERT INTO assignments(currency_code,month,category_id,assigned) VALUES(?,?,?,?) ON CONFLICT(currency_code,month,category_id) DO UPDATE SET assigned=excluded.assigned"
+  ).run(currencyCode, month, categoryId, cents);
 }
 
-function adjustAssignment(month, categoryId, delta) {
-  if (!categoryId.startsWith("cc:") && !db.prepare("SELECT 1 FROM categories WHERE id=?").get(categoryId)) {
-    throw new Error("category not found");
-  }
-  const row = db.prepare("SELECT assigned FROM assignments WHERE month=? AND category_id=?").get(month, categoryId);
+function adjustAssignment(month, categoryId, delta, currencyCode) {
+  assertAssignmentTarget(categoryId, currencyCode);
+  const row = db
+    .prepare("SELECT assigned FROM assignments WHERE month=? AND category_id=? AND currency_code=?")
+    .get(month, categoryId, currencyCode);
   const cur = row?.assigned || 0;
-  upsertAssignment(month, categoryId, cur + delta);
+  upsertAssignment(month, categoryId, cur + delta, currencyCode);
 }
 
 api.post("/budget/:month/move", (req, res) => {
-  const { month } = req.params;
-  const { fromId, toId, amount } = req.body || {};
-  const cents = Math.round(Number(amount));
-  if (!fromId || !toId || fromId === toId) return bad(res, "select different categories");
-  if (!Number.isFinite(cents) || cents <= 0) return bad(res, "invalid amount");
   try {
-    adjustAssignment(month, fromId, -cents);
-    adjustAssignment(month, toId, cents);
+    const currencyCode = requestCurrency(req);
+    const { month } = req.params;
+    const { fromId, toId, amount } = req.body || {};
+    const cents = Math.round(Number(amount));
+    if (!fromId || !toId || fromId === toId) return bad(res, "select different categories");
+    if (!Number.isFinite(cents) || cents <= 0) return bad(res, "invalid amount");
+    assertAssignmentTarget(fromId, currencyCode);
+    assertAssignmentTarget(toId, currencyCode);
+    const run = db.transaction(() => {
+      adjustAssignment(month, fromId, -cents, currencyCode);
+      adjustAssignment(month, toId, cents, currencyCode);
+    });
+    run();
+    res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return bad(res, e.message);
+    return sendAccountCurrencyError(res, e);
   }
-  res.json(budgetPayload(month));
 });
 
 api.post("/budget/:month/cover", (req, res) => {
-  const { month } = req.params;
-  const { categoryId, fromId } = req.body || {};
-  const p = budgetPayload(month);
-  const overspent = -(p.groups.flatMap((g) => g.categories).find((c) => c.id === categoryId)?.available || 0);
-  if (overspent <= 0) return bad(res, "no overspending to cover");
-  let amount = overspent;
-  if (fromId !== "rta") {
-    const donor = p.groups.flatMap((g) => g.categories).find((c) => c.id === fromId);
-    if (!donor) return bad(res, "donor not found");
-    amount = Math.min(overspent, Math.max(donor.available, 0));
-    if (amount <= 0) return bad(res, "donor has no available funds");
-    try {
-      adjustAssignment(month, fromId, -amount);
-    } catch (e) {
-      return bad(res, e.message);
+  try {
+    const currencyCode = requestCurrency(req);
+    const { month } = req.params;
+    const { categoryId, fromId } = req.body || {};
+    assertAssignmentTarget(categoryId, currencyCode);
+    if (fromId && fromId !== "rta") assertAssignmentTarget(fromId, currencyCode);
+    const p = budgetPayload(month, currencyCode);
+    const overspent = -(p.groups.flatMap((g) => g.categories).find((c) => c.id === categoryId)?.available || 0);
+    if (overspent <= 0) return bad(res, "no overspending to cover");
+    let amount = overspent;
+    if (fromId !== "rta") {
+      const donor = p.groups.flatMap((g) => g.categories).find((c) => c.id === fromId);
+      if (!donor) return bad(res, "donor not found");
+      amount = Math.min(overspent, Math.max(donor.available, 0));
+      if (amount <= 0) return bad(res, "donor has no available funds");
     }
+    const run = db.transaction(() => {
+      if (fromId !== "rta") adjustAssignment(month, fromId, -amount, currencyCode);
+      adjustAssignment(month, categoryId, amount, currencyCode);
+    });
+    run();
+    res.json(budgetPayload(month, currencyCode));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
   }
-  adjustAssignment(month, categoryId, amount);
-  res.json(budgetPayload(month));
 });
 
 api.post("/budget/:month/copy-previous", (req, res) => {
-  const { month } = req.params;
-  if (!/^\d{4}-\d{2}$/.test(month)) return bad(res, "bad month");
-  const prev = addMonths(month, -1);
-  const rows = db.prepare("SELECT category_id, assigned FROM assignments WHERE month=?").all(prev);
-  if (rows.length > 0) {
-    const tx = db.transaction(() => {
-      db.prepare("DELETE FROM assignments WHERE month=?").run(month);
-      const ins = db.prepare("INSERT INTO assignments(month,category_id,assigned) VALUES(?,?,?)");
-      for (const r of rows) ins.run(month, r.category_id, r.assigned);
-    });
-    tx();
+  try {
+    const currencyCode = requestCurrency(req);
+    const { month } = req.params;
+    if (!/^\d{4}-\d{2}$/.test(month)) return bad(res, "bad month");
+    const prev = addMonths(month, -1);
+    const rows = db
+      .prepare("SELECT category_id, assigned FROM assignments WHERE month=? AND currency_code=?")
+      .all(prev, currencyCode);
+    if (rows.length > 0) {
+      const tx = db.transaction(() => {
+        db.prepare("DELETE FROM assignments WHERE month=? AND currency_code=?").run(month, currencyCode);
+        const ins = db.prepare("INSERT INTO assignments(currency_code,month,category_id,assigned) VALUES(?,?,?,?)");
+        for (const r of rows) ins.run(currencyCode, month, r.category_id, r.assigned);
+      });
+      tx();
+    }
+    res.json(budgetPayload(month, currencyCode));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
   }
-  res.json(budgetPayload(month));
 });
 
 api.post("/budget/:month/auto-assign", (req, res) => {
-  const { month } = req.params;
-  const p = budgetPayload(month);
-  let rta = p.readyToAssign;
+  try {
+    const currencyCode = requestCurrency(req);
+    const { month } = req.params;
+    const p = budgetPayload(month, currencyCode);
+    let rta = p.readyToAssign;
 
-  const flat = p.groups.flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })));
-  const ccCats = flat.filter((c) => c.available < 0 && c.id.startsWith("cc:"));
-  for (const c of ccCats) {
-    if (rta <= 0) break;
-    const amt = Math.min(-c.available, rta);
-    adjustAssignment(month, c.id, amt);
-    rta -= amt;
+    const flat = p.groups.flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })));
+    const ccCats = flat.filter((c) => c.available < 0 && c.id.startsWith("cc:"));
+    for (const c of ccCats) {
+      if (rta <= 0) break;
+      const amt = Math.min(-c.available, rta);
+      adjustAssignment(month, c.id, amt, currencyCode);
+      rta -= amt;
+    }
+    const withGoals = flat.filter((c) => !c.id.startsWith("cc:") && c.goal && c.need && c.need.need > 0);
+    for (const c of withGoals) {
+      if (rta <= 0) break;
+      const amt = Math.min(c.need.need, rta);
+      adjustAssignment(month, c.id, amt, currencyCode);
+      rta -= amt;
+    }
+    res.json(budgetPayload(month, currencyCode));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
   }
-  const withGoals = flat.filter((c) => !c.id.startsWith("cc:") && c.goal && c.need && c.need.need > 0);
-  for (const c of withGoals) {
-    if (rta <= 0) break;
-    const amt = Math.min(c.need.need, rta);
-    adjustAssignment(month, c.id, amt);
-    rta -= amt;
-  }
-  res.json(budgetPayload(month));
 });
 
 api.get("/accounts", (req, res) => {
@@ -1155,22 +1219,42 @@ api.delete("/categories/:id", (req, res) => {
 });
 
 api.put("/goals/:categoryId", (req, res) => {
-  const c = db.prepare("SELECT * FROM categories WHERE id=?").get(req.params.categoryId);
-  if (!c) return bad(res, "not found");
-  const { type, target, targetMonth } = req.body || {};
-  if (type == null) {
-    db.prepare("DELETE FROM goals WHERE category_id=?").run(c.id);
-    return res.json({ ok: true });
+  try {
+    const currencyCode = requestCurrency(req);
+    const c = db.prepare("SELECT * FROM categories WHERE id=?").get(req.params.categoryId);
+    if (!c) return bad(res, "not found");
+    const { type, target, targetMonth } = req.body || {};
+    if (type == null) {
+      db.prepare("DELETE FROM goals WHERE category_id=? AND currency_code=?").run(c.id, currencyCode);
+      return res.json({ ok: true, currencyCode });
+    }
+    if (!["monthly", "targetBalance", "targetByDate"].includes(type)) return bad(res, "invalid type");
+    const cents = Math.max(Math.round(Number(target) || 0), 0);
+    db.prepare(
+      "INSERT INTO goals(currency_code,category_id,type,target,target_month) VALUES(?,?,?,?,?) ON CONFLICT(currency_code,category_id) DO UPDATE SET type=excluded.type,target=excluded.target,target_month=excluded.target_month"
+    ).run(currencyCode, c.id, type, cents, type === "targetByDate" ? targetMonth || null : null);
+    res.json({ ok: true, currencyCode });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
   }
-  if (!["monthly", "targetBalance", "targetByDate"].includes(type)) return bad(res, "invalid type");
-  const cents = Math.max(Math.round(Number(target) || 0), 0);
-  db.prepare(
-    "INSERT INTO goals(category_id,type,target,target_month) VALUES(?,?,?,?) ON CONFLICT(category_id) DO UPDATE SET type=excluded.type,target=excluded.target,target_month=excluded.target_month"
-  ).run(c.id, type, cents, type === "targetByDate" ? targetMonth || null : null);
-  res.json({ ok: true });
 });
 
 api.get("/reports/overview", (req, res) => {
-  const n = Math.min(Math.max(Number(req.query.months) || 12, 3), 24);
-  res.json(reportsOverview(n));
+  try {
+    const currencyCode = requestCurrency(req);
+    const n = Math.min(Math.max(Number(req.query.months) || 12, 3), 24);
+    res.json(reportsOverview(n, currencyCode));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
+});
+
+api.get("/reports/native", (req, res) => {
+  try {
+    const currencyCode = requestCurrency(req);
+    const n = Math.min(Math.max(Number(req.query.months) || 12, 3), 24);
+    res.json(buildNativeReport({ currencyCode, months: n }));
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });

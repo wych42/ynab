@@ -133,24 +133,26 @@ export const api = {
       body: JSON.stringify({ approve }),
     }),
 
-  budget: (month: string) => req<BudgetData>(`/api/budget/${month}`),
-  assign: (month: string, categoryId: string, cents: number) =>
-    req<BudgetData>(`/api/budget/${month}/category/${categoryId}/assign`, {
+  budget: (month: string, currency: string) => req<BudgetData>(`/api/budget/${month}?currency=${encodeURIComponent(currency)}`),
+  assign: (month: string, categoryId: string, cents: number, currency: string) =>
+    req<BudgetData>(`/api/budget/${month}/category/${categoryId}/assign?currency=${encodeURIComponent(currency)}`, {
       method: "PUT",
       body: JSON.stringify({ assigned: cents }),
     }),
-  moveMoney: (month: string, fromId: string, toId: string, cents: number) =>
-    req<BudgetData>(`/api/budget/${month}/move`, {
+  moveMoney: (month: string, fromId: string, toId: string, cents: number, currency: string) =>
+    req<BudgetData>(`/api/budget/${month}/move?currency=${encodeURIComponent(currency)}`, {
       method: "POST",
       body: JSON.stringify({ fromId, toId, amount: cents }),
     }),
-  coverOverspending: (month: string, categoryId: string, fromId: string) =>
-    req<BudgetData>(`/api/budget/${month}/cover`, {
+  coverOverspending: (month: string, categoryId: string, fromId: string, currency: string) =>
+    req<BudgetData>(`/api/budget/${month}/cover?currency=${encodeURIComponent(currency)}`, {
       method: "POST",
       body: JSON.stringify({ categoryId, fromId }),
     }),
-  autoAssign: (month: string) => req<BudgetData>(`/api/budget/${month}/auto-assign`, { method: "POST" }),
-  copyLastMonth: (month: string) => req<BudgetData>(`/api/budget/${month}/copy-previous`, { method: "POST" }),
+  autoAssign: (month: string, currency: string) =>
+    req<BudgetData>(`/api/budget/${month}/auto-assign?currency=${encodeURIComponent(currency)}`, { method: "POST" }),
+  copyLastMonth: (month: string, currency: string) =>
+    req<BudgetData>(`/api/budget/${month}/copy-previous?currency=${encodeURIComponent(currency)}`, { method: "POST" }),
 
   accounts: () => req<{ accounts: Account[] }>("/api/accounts"),
   createAccount: (body: {
@@ -213,9 +215,14 @@ export const api = {
   deleteCategory: (id: string) => req<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
   setGoal: (
     categoryId: string,
-    body: { type: "monthly" | "targetBalance" | "targetByDate"; target: number; targetMonth?: string | null }
-  ) => req<{ ok: true }>(`/api/goals/${categoryId}`, { method: "PUT", body: JSON.stringify(body) }),
-  clearGoal: (categoryId: string) => req<{ ok: true }>(`/api/goals/${categoryId}`, { method: "PUT", body: JSON.stringify({ type: null }) }),
+    body: { type: "monthly" | "targetBalance" | "targetByDate"; target: number; targetMonth?: string | null },
+    currency: string,
+  ) => req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify(body) }),
+  clearGoal: (categoryId: string, currency: string) =>
+    req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify({ type: null }) }),
 
-  reports: (months = 12) => req<ReportsData>(`/api/reports/overview?months=${months}`),
+  reports: (months = 12, currency: string) =>
+    req<ReportsData>(`/api/reports/overview?months=${months}&currency=${encodeURIComponent(currency)}`),
+  nativeReport: (currency: string, months = 12) =>
+    req<ReportsData>(`/api/reports/native?currency=${encodeURIComponent(currency)}&months=${months}`),
 };

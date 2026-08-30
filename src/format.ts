@@ -1,5 +1,5 @@
 import type { Lang } from "./i18n";
-import { formatMoney } from "./money";
+import { formatMoney, getExponent } from "./money";
 
 let currencySymbol = "¥";
 export function setCurrencySymbol(s: string) {
@@ -60,13 +60,25 @@ export function fmtMoney(
   return `${neg ? "-" : opts?.sign ? "+" : ""}${currencySymbol}${str}`;
 }
 
-export function fmtMoneyShort(cents: number): string {
+export function fmtMoneyShort(cents: number, opts?: { currencyCode?: string; locale?: string }): string {
+  if (opts?.currencyCode) return fmtMoney(cents, { currencyCode: opts.currencyCode, locale: opts.locale });
   const abs = Math.abs(cents);
   const neg = cents < 0 ? "-" : "";
   if (abs >= 1e10) return `${neg}${currencySymbol}${(abs / 1e10).toFixed(1)}亿`;
   if (abs >= 1e7) return `${neg}${currencySymbol}${Math.round(abs / 1e6)}万`;
   if (abs >= 1e6) return `${neg}${currencySymbol}${(abs / 1e6).toFixed(1)}万`;
   return fmtMoney(cents);
+}
+
+export function formatMinorInput(amountMinor: number, currencyCode: string): string {
+  const exponent = getExponent(currencyCode);
+  const sign = amountMinor < 0 ? "-" : "";
+  const abs = Math.abs(amountMinor);
+  if (exponent === 0) return `${sign}${abs}`;
+  const scale = 10 ** exponent;
+  const whole = Math.floor(abs / scale);
+  const frac = String(abs % scale).padStart(exponent, "0");
+  return `${sign}${whole}.${frac}`;
 }
 
 export function fmtMonth(ym: string, lang: Lang): string {

@@ -58,7 +58,7 @@ describe("categories.note 备注字段", () => {
 
   it("备注会出现在预算载荷与 bootstrap 的分类数据里", async () => {
     await call("PUT", `/api/categories/${catId}`, { note: "载荷透出" });
-    const b = await call("GET", `/api/budget/${cur}`);
+    const b = await call("GET", `/api/budget/${cur}?currency=CNY`);
     const cat = b.json.groups.flatMap((g) => g.categories).find((c) => c.id === catId);
     expect(cat.note).toBe("载荷透出");
 

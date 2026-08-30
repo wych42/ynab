@@ -2,7 +2,7 @@
 
 > 状态：测试设计已完成，自动化测试按实现里程碑推进中。
 >
-> 更新日期：2026-08-30。
+> 更新日期：2026-08-31。
 >
 > 适用方案：[plan.md](./plan.md)。产品边界与预期结果以 [open-questions.md](./open-questions.md) 的已确认结论为准。
 
@@ -89,12 +89,12 @@
 | Money Module 与币种目录 | `server/money.test.mjs`、`src/money.test.ts` | 已完成 | 共享矩阵 68 tests；全量 316 tests；最大安全整数格式化不丢最小单位 |
 | 旧数据库迁移 | `server/db.currency-migration.test.mjs` | 已完成 | targeted 32 tests；全量 369 tests；迁移矩阵、原子回滚、备份与独立恢复通过 |
 | 账户币种与设置 | `server/routes.currency-accounts.test.mjs`、账户与设置页面测试 | 已完成 | targeted 26 tests；全量 393 tests；账户创建回滚、币种锁定、启用账本、汇总币种和原币小计通过 |
-| 币种预算隔离 | `server/engine.currency-budget.test.mjs` | 未开始 | CNY 与 SGD 隔离、家庭 CNY 合并结果 |
+| 币种预算隔离 | `server/engine.currency-budget.test.mjs`、`server/routes.currency-budget.test.mjs` | 已完成 | targeted 41 tests；CNY 与 SGD 隔离、家庭 CNY 合并、信用卡虚拟分类和复合主键通过 |
 | Currency Ledger Module | `server/currency-ledger.test.mjs` | 未开始 | 交易、转账、对账与原子性结果 |
 | FX Module 与 Provider | `server/fx.test.mjs`、`server/fx.provider-contract.test.mjs` | 未开始 | Adapter 契约与离线结果 |
-| 原币报表与统一净资产 | `server/reports.currency.test.mjs` | 未开始 | 当前和历史结果手算表 |
-| HTTP Interface | `server/routes.currency.test.mjs` | 未开始 | 状态码、响应币种和委托行为 |
-| React 页面 | 现有页面测试及新增迁移、报表测试 | 未开始 | jsdom 行为测试结果 |
+| 原币报表与统一净资产 | `server/reports.native-currency.test.mjs`，后续补统一净资产测试 | 部分完成 | 原币报表已隔离币种，并排除转账、期初行和估值调整；统一净资产等待 FX Module |
+| HTTP Interface | 各里程碑对应的 `server/routes.currency-*.test.mjs` | 部分完成 | 预算与原币报表强制查询参数，稳定错误和顶层币种通过；交易、FX 与统一净资产接口待后续里程碑 |
+| React 页面 | 现有页面测试及新增币种页面测试 | 部分完成 | Budget 与原币 Reports 的活动币种、JPY 精度和迟到响应通过；交易、换汇、统一净资产与投资页面待后续里程碑 |
 | AI 与 IM 写入 | `server/ai.currency-tools.test.mjs` 及现有 IM 测试 | 未开始 | 类型化工具、确认和 SQL 保护结果 |
 | 生产库副本演练 | 本文件的迁移验收清单 | 未开始 | 脱敏核对表、备份与恢复记录 |
 | 浏览器手工验收 | 本文件的家庭使用场景 | 未开始 | 逐项勾选记录与截图 |

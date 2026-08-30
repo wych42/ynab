@@ -14,10 +14,9 @@ import {
   listEnabledCurrencyCodes,
   seedDefaultCurrencyLedgers,
 } from "./currency-state.mjs";
+import { rebuildAssignmentsWithCurrency, rebuildGoalsWithCurrency } from "./currency-schema.mjs";
 
 export const CURRENCY_MIGRATION_BACKUP_DIR_NAME = "currency-migration-backups";
-
-const CURRENCY_SHAPE_SQL = "length(currency_code) = 3 AND currency_code GLOB '[A-Z][A-Z][A-Z]'";
 
 const SYMBOL_SUGGESTIONS = {
   "¥": "CNY",
@@ -155,45 +154,6 @@ async function createPreTransformBackup(database, dataDir, now) {
   }
 }
 
-function rebuildAssignments(database) {
-  database.exec(`
-CREATE TABLE assignments_new (
-  currency_code TEXT NOT NULL
-    CHECK (${CURRENCY_SHAPE_SQL})
-    REFERENCES currency_ledgers(currency_code),
-  month TEXT NOT NULL,
-  category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-  assigned INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (currency_code, month, category_id)
-);
-INSERT INTO assignments_new(currency_code, month, category_id, assigned)
-  SELECT currency_code, month, category_id, assigned FROM assignments;
-DROP TABLE assignments;
-ALTER TABLE assignments_new RENAME TO assignments;
-CREATE INDEX IF NOT EXISTS idx_assignments_currency_code ON assignments(currency_code);
-`);
-}
-
-function rebuildGoals(database) {
-  database.exec(`
-CREATE TABLE goals_new (
-  currency_code TEXT NOT NULL
-    CHECK (${CURRENCY_SHAPE_SQL})
-    REFERENCES currency_ledgers(currency_code),
-  category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
-  type TEXT NOT NULL,
-  target INTEGER NOT NULL DEFAULT 0,
-  target_month TEXT,
-  PRIMARY KEY (currency_code, category_id)
-);
-INSERT INTO goals_new(currency_code, category_id, type, target, target_month)
-  SELECT currency_code, category_id, type, target, target_month FROM goals;
-DROP TABLE goals;
-ALTER TABLE goals_new RENAME TO goals;
-CREATE INDEX IF NOT EXISTS idx_goals_currency_code ON goals(currency_code);
-`);
-}
-
 function applyLegacyCurrencyTransform(database, currencyCode, scale, money) {
   seedDefaultCurrencyLedgers(database);
   createCurrencyLedger(database, currencyCode, { money, sortOrder: 80 });
@@ -209,8 +169,8 @@ function applyLegacyCurrencyTransform(database, currencyCode, scale, money) {
   database.prepare("UPDATE assignments SET currency_code = ?").run(currencyCode);
   database.prepare("UPDATE goals SET currency_code = ?").run(currencyCode);
 
-  rebuildAssignments(database);
-  rebuildGoals(database);
+  rebuildAssignmentsWithCurrency(database);
+  rebuildGoalsWithCurrency(database);
 
   writeSetting(database, REPORTING_CURRENCY_KEY, currencyCode);
   writeSetting(database, CURRENCY_MIGRATION_STATUS_KEY, CURRENCY_MIGRATION_COMPLETE);

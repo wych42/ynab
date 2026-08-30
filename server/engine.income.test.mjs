@@ -28,7 +28,7 @@ db.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)"
 const otherIncomeCid = uid();
 db.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)").run(otherIncomeCid, incomeGid, "其他收入", 1);
 
-const acc = createAccount({ name: "现金", type: "cash", startingBalance: 0 });
+const acc = createAccount({ name: "现金", type: "cash", currencyCode: "CNY", startingBalance: 0 });
 const today = `${currentMonth()}-15`;
 
 function tx({ amount, categoryId = null, payee = "x", transferAccountId = null }) {
@@ -39,7 +39,7 @@ function tx({ amount, categoryId = null, payee = "x", transferAccountId = null }
 }
 
 function state() {
-  return computeBudget(currentMonth()).byMonth.get(currentMonth());
+  return computeBudget(currentMonth(), "CNY").byMonth.get(currentMonth());
 }
 
 describe("computeBudget：收入分类路由", () => {
@@ -94,7 +94,7 @@ describe("computeBudget：收入分类路由", () => {
     db.prepare(
       "INSERT INTO transactions(id,account_id,date,payee_name,category_id,amount,created_at) VALUES(?,?,?,?,?,?,?)"
     ).run(uid(), acc, ymdDate(m1, "20"), "发薪", salaryCid, 900000, new Date().toISOString());
-    const res = computeBudget(currentMonth());
+    const res = computeBudget(currentMonth(), "CNY");
     const s1 = res.byMonth.get(m1);
     const cur = res.byMonth.get(currentMonth());
     expect(s1.inflow).toBe(900000);

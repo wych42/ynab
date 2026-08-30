@@ -28,7 +28,7 @@ const call = async (method, url, body) => {
 };
 
 // ---- fixtures ----
-const acc = createAccount({ name: "现金", type: "cash", startingBalance: 0 });
+const acc = createAccount({ name: "现金", type: "cash", currencyCode: "CNY", startingBalance: 0 });
 
 const spendGid = uid();
 db.prepare("INSERT INTO category_groups(id,name,sort_order,is_income) VALUES(?,?,0,0)").run(spendGid, "日常开销");
@@ -130,7 +130,7 @@ describe("PUT /api/category-groups/:id：收入组保护", () => {
 
 describe("GET /api/budget/:month：收入分组不进入可分配列表", () => {
   it("预算载荷丢弃 is_income 分组，且收入分类不出现在任何组内", async () => {
-    const r = await call("GET", `/api/budget/${currentMonth()}`);
+    const r = await call("GET", `/api/budget/${currentMonth()}?currency=CNY`);
     expect(r.status).toBe(200);
     expect(r.json.groups.some((g) => g.is_income)).toBe(false);
     const allIds = r.json.groups.flatMap((g) => g.categories.map((c) => c.id));
@@ -149,14 +149,14 @@ describe("GET /api/reports/overview：收入口径一致", () => {
   });
 
   it("收入只统计收入分类/无分类正数；退款到支出分类不计入收入", () => {
-    const rep = reportsOverview(3);
+    const rep = reportsOverview(3, "CNY");
     const m = currentMonth();
     const income = rep.income.find((x) => x.month === m).value;
     expect(income).toBe(1000000);
   });
 
   it("收入来源 breakdown 按收入分类列出", () => {
-    const rep = reportsOverview(3);
+    const rep = reportsOverview(3, "CNY");
     const src = rep.incomeSources;
     expect(src).toEqual([{ name: "工资薪酬", value: 1000000 }]);
   });

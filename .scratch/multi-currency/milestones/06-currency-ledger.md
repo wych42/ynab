@@ -2,7 +2,7 @@
 
 > Milestone：06
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：隔离各币种的预算和原币收支
 >

@@ -5,6 +5,12 @@ import { makeT, type Lang, type TKey } from "./i18n";
 import { setCurrencySymbol } from "./format";
 import { setToken, clearToken } from "./auth";
 import type { Bootstrap } from "./types";
+import {
+  persistBudgetCurrency,
+  readStoredBudgetCurrency,
+  resolveActiveBudgetCurrency,
+} from "./activeCurrency";
+export { ACTIVE_BUDGET_CURRENCY_KEY, resolveActiveBudgetCurrency } from "./activeCurrency";
 
 interface Toast {
   id: number;
@@ -24,6 +30,8 @@ interface AppState {
   setLang: (l: Lang) => void;
   refreshBoot: () => Promise<void>;
   toast: (text: string, kind?: "ok" | "err") => void;
+  activeCurrency: string | null;
+  setActiveCurrency: (code: string) => void;
 }
 
 const Ctx = createContext<AppState>(null as unknown as AppState);
@@ -37,12 +45,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
+  const [activeCurrency, setActiveCurrencyState] = useState<string | null>(null);
+
+  const applyResolvedCurrency = useCallback((b: Bootstrap) => {
+    const resolved = resolveActiveBudgetCurrency(
+      b.enabledCurrencies,
+      b.settings.reportingCurrency,
+      readStoredBudgetCurrency(),
+    );
+    setActiveCurrencyState(resolved);
+    persistBudgetCurrency(resolved);
+  }, []);
 
   const refreshBoot = useCallback(async () => {
     const b = await api.bootstrap();
     setCurrencySymbol(b.settings.currencySymbol);
     setBoot(b);
-  }, []);
+    applyResolvedCurrency(b);
+  }, [applyResolvedCurrency]);
+
+  const setActiveCurrency = useCallback(
+    (code: string) => {
+      const enabled = boot?.enabledCurrencies ?? [];
+      if (!enabled.includes(code)) return;
+      setActiveCurrencyState(code);
+      persistBudgetCurrency(code);
+    },
+    [boot],
+  );
 
   useEffect(() => {
     async function init() {
@@ -106,8 +136,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const t = useMemo(() => makeT(lang), [lang]);
 
   const value = useMemo(
-    () => ({ boot, loading, lang, authEnabled, authenticated, login, logout, t, setLang, refreshBoot, toast }),
-    [boot, loading, lang, authEnabled, authenticated, login, logout, t, setLang, refreshBoot, toast]
+    () => ({
+      boot,
+      loading,
+      lang,
+      authEnabled,
+      authenticated,
+      login,
+      logout,
+      t,
+      setLang,
+      refreshBoot,
+      toast,
+      activeCurrency,
+      setActiveCurrency,
+    }),
+    [boot, loading, lang, authEnabled, authenticated, login, logout, t, setLang, refreshBoot, toast, activeCurrency, setActiveCurrency]
   );
 
   return (

@@ -1,4 +1,9 @@
 import { db, addMonths, endOfMonth, currentMonth, todayYmd } from "./db.mjs";
+import { presentAccount, requireEnabledCurrency } from "./account-currency.mjs";
+
+function requireCurrency(currencyCode) {
+  return requireEnabledCurrency(db, currencyCode);
+}
 
 export function daysBetween(a, b) {
   const [ay, am, ad] = a.split("-").map(Number);
@@ -6,20 +11,27 @@ export function daysBetween(a, b) {
   return Math.round((Date.UTC(by, bm - 1, bd) - Date.UTC(ay, am - 1, ad)) / 86400000);
 }
 
-export function earliestMonth() {
+export function earliestMonth(currencyCode) {
+  const code = requireCurrency(currencyCode);
   const cands = [currentMonth()];
-  const t = db.prepare("SELECT MIN(date) d FROM transactions").get();
-  const s = db.prepare("SELECT MIN(starting_balance_date) d FROM accounts WHERE starting_balance<>0").get();
-  const a = db.prepare("SELECT MIN(month) m FROM assignments").get();
+  const t = db
+    .prepare(
+      `SELECT MIN(t.date) d FROM transactions t JOIN accounts a ON a.id=t.account_id WHERE a.currency_code=?`
+    )
+    .get(code);
+  const s = db
+    .prepare("SELECT MIN(starting_balance_date) d FROM accounts WHERE starting_balance<>0 AND currency_code=?")
+    .get(code);
+  const a = db.prepare("SELECT MIN(month) m FROM assignments WHERE currency_code=?").get(code);
   if (t?.d) cands.push(t.d.slice(0, 7));
   if (s?.d) cands.push(s.d.slice(0, 7));
   if (a?.m) cands.push(a.m);
   return cands.sort()[0];
 }
 
-export function listMonths(uptoMonth) {
+export function listMonths(uptoMonth, currencyCode) {
   const months = [];
-  let m = earliestMonth();
+  let m = earliestMonth(currencyCode);
   while (m <= uptoMonth && months.length < 600) {
     months.push(m);
     m = addMonths(m, 1);
@@ -44,15 +56,17 @@ export function accountBalances() {
   return map;
 }
 
-export function computeBudget(uptoMonth) {
-  const months = listMonths(uptoMonth);
+export function computeBudget(uptoMonth, currencyCode) {
+  const code = requireCurrency(currencyCode);
+  const months = listMonths(uptoMonth, code);
   const txRows = db
     .prepare(
       `SELECT t.*, a.on_budget AS ob, a.type AS atype
-       FROM transactions t JOIN accounts a ON a.id = t.account_id`
+       FROM transactions t JOIN accounts a ON a.id = t.account_id
+       WHERE a.currency_code=?`
     )
-    .all();
-  const assignRows = db.prepare("SELECT * FROM assignments").all();
+    .all(code);
+  const assignRows = db.prepare("SELECT * FROM assignments WHERE currency_code=?").all(code);
 
   const txByMonth = new Map();
   for (const t of txRows) {
@@ -76,8 +90,8 @@ export function computeBudget(uptoMonth) {
   );
   const budgetCats = realCats.filter((id) => !incomeCats.has(id));
   const ccAccounts = db
-    .prepare("SELECT id FROM accounts WHERE type IN ('creditCard','lineOfCredit') AND on_budget=1")
-    .all()
+    .prepare("SELECT id FROM accounts WHERE type IN ('creditCard','lineOfCredit') AND on_budget=1 AND currency_code=?")
+    .all(code)
     .map((r) => r.id);
 
   const catIds = () => {
@@ -203,15 +217,16 @@ export function categoryMeta() {
   return cats;
 }
 
-export function ageOfMoney() {
+export function ageOfMoney(currencyCode) {
+  const code = requireCurrency(currencyCode);
   const rows = db
     .prepare(
       `SELECT t.date, t.amount FROM transactions t JOIN accounts a ON a.id=t.account_id
        WHERE a.on_budget=1 AND a.type NOT IN ('creditCard','lineOfCredit') AND t.is_start=0
-         AND t.transfer_account_id IS NULL
+         AND t.transfer_account_id IS NULL AND a.currency_code=?
        ORDER BY t.date, t.rowid`
     )
-    .all();
+    .all(code);
   const queue = [];
   for (const t of rows) {
     if (t.amount > 0) queue.push({ date: t.date, left: t.amount });
@@ -230,29 +245,34 @@ export function ageOfMoney() {
   return Math.max(daysBetween(queue[0].date, todayYmd()), 0);
 }
 
-export function reportsOverview(countMonths = 12) {
+const LIABILITY_TYPES = ["creditCard", "lineOfCredit", "studentLoan", "personalLoan", "otherLiability"];
+
+export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {}) {
+  const code = requireCurrency(currencyCode);
+  const n = Math.min(Math.max(Number(countMonths) || 12, 3), 24);
   const cur = currentMonth();
   const months = [];
-  for (let i = countMonths - 1; i >= 0; i--) months.push(addMonths(cur, -i));
+  for (let i = n - 1; i >= 0; i--) months.push(addMonths(cur, -i));
 
-  const accts = getAccounts();
+  const accts = db.prepare("SELECT * FROM accounts WHERE currency_code=? ORDER BY sort_order, created_at").all(code);
   const balById = accountBalances();
   let assets = 0;
   let liabilities = 0;
   const accountList = accts.map((a) => {
     const b = balById.get(a.id) || 0;
-    const isLiab = ["creditCard", "lineOfCredit", "studentLoan", "personalLoan", "otherLiability"].includes(a.type);
+    const isLiab = LIABILITY_TYPES.includes(a.type);
     if (isLiab) liabilities += b;
     else assets += b;
-    return { ...a, balance: b };
+    return presentAccount(a, { balance: b });
   });
 
   const txRows = db
     .prepare(
       `SELECT t.*, a.on_budget AS ob, a.type AS atype
-       FROM transactions t JOIN accounts a ON a.id=t.account_id`
+       FROM transactions t JOIN accounts a ON a.id=t.account_id
+       WHERE a.currency_code=?`
     )
-    .all();
+    .all(code);
 
   const incomeByM = new Map();
   const expenseByM = new Map();
@@ -270,7 +290,7 @@ export function reportsOverview(countMonths = 12) {
   const isIncome = (catId) => (catId ? incomeCatIds.has(catId) : true);
 
   for (const t of txRows) {
-    if (!t.ob || t.is_start) continue;
+    if (!t.ob || t.is_start || t.is_reconcile_adjustment) continue;
     const m = t.date.slice(0, 7);
     if (!incomeByM.has(m)) continue;
     if (t.transfer_account_id) continue;
@@ -286,7 +306,7 @@ export function reportsOverview(countMonths = 12) {
     for (const acc of accts) {
       let b = acc.starting_balance;
       b += txRows.reduce((s, t) => (t.account_id === acc.id && t.date <= eom && !t.is_start ? s + t.amount : s), 0);
-      const isLiab = ["creditCard", "lineOfCredit", "studentLoan", "personalLoan", "otherLiability"].includes(acc.type);
+      const isLiab = LIABILITY_TYPES.includes(acc.type);
       if (b >= 0) a += b;
       else l += b;
     }
@@ -299,7 +319,7 @@ export function reportsOverview(countMonths = 12) {
   const incomeSourceMap = new Map();
   const catNames = new Map(db.prepare("SELECT id,name FROM categories").all().map((r) => [r.id, r.name]));
   for (const t of txRows) {
-    if (!t.ob || t.is_start || t.transfer_account_id) continue;
+    if (!t.ob || t.is_start || t.is_reconcile_adjustment || t.transfer_account_id) continue;
     const m = t.date.slice(0, 7);
     if (m < firstM || m > cur) continue;
     if (t.amount < 0) {
@@ -312,6 +332,7 @@ export function reportsOverview(countMonths = 12) {
   }
 
   return {
+    currencyCode: code,
     months,
     income: months.map((m) => ({ month: m, value: incomeByM.get(m) })),
     expense: months.map((m) => ({ month: m, value: expenseByM.get(m) })),
@@ -331,6 +352,10 @@ export function reportsOverview(countMonths = 12) {
     incomeSources: [...incomeSourceMap.entries()]
       .map(([id, value]) => ({ name: catNames.get(id) || id, value }))
       .sort((x, y) => y.value - x.value),
-    ageOfMoney: ageOfMoney(),
+    ageOfMoney: ageOfMoney(code),
   };
+}
+
+export function reportsOverview(countMonths = 12, currencyCode) {
+  return buildNativeReport({ months: countMonths, currencyCode });
 }

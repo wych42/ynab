@@ -5,6 +5,7 @@ import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/re
 const h = vi.hoisted(() => {
   const budgetData = (month: string) => ({
     month,
+    currencyCode: "CNY",
     months: ["2026-02"],
     maxMonth: "2026-04",
     readyToAssign: 10000,
@@ -67,6 +68,8 @@ vi.mock("../store", () => {
     toast,
     setLang: vi.fn(),
     refreshBoot: vi.fn().mockResolvedValue({}),
+    activeCurrency: "CNY",
+    setActiveCurrency: vi.fn(),
   });
   return { useApp };
 });

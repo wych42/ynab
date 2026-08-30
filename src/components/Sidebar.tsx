@@ -146,9 +146,7 @@ export function Sidebar({
   open?: boolean;
   onNavigate?: () => void;
 }) {
-  const { boot, t, lang, setLang } = useApp();
-  const [currencyOpen, setCurrencyOpen] = useState(false);
-  const [symbol, setSymbol] = useState(boot?.settings.currencySymbol ?? "¥");
+  const { boot, t, lang, setLang, activeCurrency, setActiveCurrency } = useApp();
 
   const accs = boot?.accounts ?? [];
   const onBudget = accs.filter((a) => !a.closed && a.on_budget);
@@ -203,25 +201,6 @@ export function Sidebar({
       </div>
 
       <div className="mt-auto space-y-3 px-4 pt-4">
-        {currencyOpen && (
-          <div className="anim-pop flex items-center gap-2 rounded-lg bg-navy-750 p-2">
-            <input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.slice(0, 3))}
-              className="w-14 rounded-md border border-white/10 bg-navy-900 px-2 py-1 text-center text-sm text-white outline-none focus:border-brand-400"
-            />
-            <button
-              className="rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-500"
-              onClick={async () => {
-                const { api } = await import("../api");
-                await api.saveSettings({ currencySymbol: symbol });
-                location.reload();
-              }}
-            >
-              OK
-            </button>
-          </div>
-        )}
         <div className="flex items-center justify-between border-t border-white/[0.07] pt-3">
           <div className="flex overflow-hidden rounded-full border border-white/10 p-0.5">
             {(["zh", "en"] as Lang[]).map((l) => (
@@ -236,13 +215,22 @@ export function Sidebar({
               </button>
             ))}
           </div>
-          <button
-            onClick={() => setCurrencyOpen(!currencyOpen)}
-            title={t("settings_currency")}
-            className="rounded-md px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white"
+          <label className="sr-only" htmlFor="sidebar-budget-currency">
+            {t("sidebar_budgetCurrency")}
+          </label>
+          <select
+            id="sidebar-budget-currency"
+            aria-label={t("sidebar_budgetCurrency")}
+            value={activeCurrency ?? ""}
+            onChange={(e) => setActiveCurrency(e.target.value)}
+            className="rounded-md border border-white/10 bg-navy-900 px-2 py-1 text-xs text-slate-200 outline-none hover:border-white/20 focus:border-brand-400"
           >
-            {(boot?.settings.currencySymbol ?? "¥")}
-          </button>
+            {(boot?.enabledCurrencies ?? []).map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
     </aside>

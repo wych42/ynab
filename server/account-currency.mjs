@@ -68,6 +68,14 @@ export function parsePublicCurrencyCode(value) {
   return value;
 }
 
+export function requireEnabledCurrency(database, currencyCode) {
+  const code = parsePublicCurrencyCode(currencyCode);
+  if (!listEnabledCurrencyCodes(database).includes(code)) {
+    throw new AccountCurrencyError("currency_not_enabled", `${code} is not an enabled currency`);
+  }
+  return code;
+}
+
 export function parseStartingBalanceMinor(body = {}) {
   if (Object.prototype.hasOwnProperty.call(body, "startingBalance")) {
     throw new MoneyError("invalid_amount", "startingBalance is not accepted; use startingBalanceMinor");

@@ -3,10 +3,12 @@ import path from "node:path";
 import {
   applyMigrations,
   budgetDbPath,
+  columnInfo,
   columnNames,
   indexList,
   makeTempDataDir,
   openRawSqlite,
+  primaryKeyColumns,
   readSetting,
   tableNames,
 } from "./test-support/database.mjs";
@@ -82,6 +84,7 @@ const {
   ensureCurrencyMigrationState,
 } = await import("./db.mjs");
 const { createCurrencyLedger, getCurrencyBootstrapState } = await import("./currency-state.mjs");
+const { finalizeBudgetCurrencySchema } = await import("./currency-schema.mjs");
 
 const emptyDir = makeTempDataDir("ynab-currency-schema-empty-");
 const emptyDb = openBudgetDatabase(budgetDbPath(emptyDir));
@@ -187,6 +190,10 @@ describe("legacy database startup", () => {
       original_amount: null,
     });
     expect(ledgerCodes(db)).toEqual([]);
+    expect(primaryKeyColumns(db, "assignments")).toEqual(["month", "category_id"]);
+    expect(primaryKeyColumns(db, "goals")).toEqual(["category_id"]);
+    expect(columnInfo(db, "assignments", "currency_code").notnull).toBe(0);
+    expect(columnInfo(db, "goals", "currency_code").notnull).toBe(0);
   });
 
   it("marks an old database with financial data as migration pending", () => {
@@ -217,6 +224,64 @@ describe("empty database startup", () => {
     expect(state.enabledCurrencies).toEqual(["CNY", "USD", "SGD", "EUR", "JPY"]);
     expect(state.reportingCurrency).toBeNull();
     expect(listDefaultEnabledCurrencies().map((currency) => currency.code)).toEqual(state.enabledCurrencies);
+  });
+
+  it("gives assignments and goals composite uniqueness by currency on a brand-new empty database", () => {
+    expect(primaryKeyColumns(emptyDb, "assignments")).toEqual(["currency_code", "month", "category_id"]);
+    expect(primaryKeyColumns(emptyDb, "goals")).toEqual(["currency_code", "category_id"]);
+    expect(columnInfo(emptyDb, "assignments", "currency_code").notnull).toBe(1);
+    expect(columnInfo(emptyDb, "goals", "currency_code").notnull).toBe(1);
+
+    const categoryId = emptyDb.prepare("SELECT id FROM categories ORDER BY sort_order LIMIT 1").get().id;
+    emptyDb
+      .prepare("INSERT INTO assignments(currency_code, month, category_id, assigned) VALUES ('CNY','2026-08',?,100)")
+      .run(categoryId);
+    emptyDb
+      .prepare("INSERT INTO assignments(currency_code, month, category_id, assigned) VALUES ('SGD','2026-08',?,200)")
+      .run(categoryId);
+    expect(() =>
+      emptyDb
+        .prepare("INSERT INTO assignments(currency_code, month, category_id, assigned) VALUES ('CNY','2026-08',?,300)")
+        .run(categoryId)
+    ).toThrow(/UNIQUE|constraint/i);
+
+    emptyDb
+      .prepare("INSERT INTO goals(currency_code, category_id, type, target) VALUES ('CNY',?,'monthly',100)")
+      .run(categoryId);
+    emptyDb
+      .prepare("INSERT INTO goals(currency_code, category_id, type, target) VALUES ('SGD',?,'monthly',200)")
+      .run(categoryId);
+    expect(() =>
+      emptyDb
+        .prepare("INSERT INTO goals(currency_code, category_id, type, target) VALUES ('CNY',?,'monthly',300)")
+        .run(categoryId)
+    ).toThrow(/UNIQUE|constraint/i);
+
+    emptyDb.prepare("DELETE FROM assignments WHERE category_id=?").run(categoryId);
+    emptyDb.prepare("DELETE FROM goals WHERE category_id=?").run(categoryId);
+  });
+
+  it("allows credit-card virtual assignment ids and does not FK assignments to categories", () => {
+    const fks = emptyDb.pragma("foreign_key_list(assignments)");
+    expect(fks.some((fk) => fk.table === "categories")).toBe(false);
+    expect(emptyDb.pragma("foreign_key_list(goals)").some((fk) => fk.table === "categories")).toBe(true);
+
+    emptyDb
+      .prepare(
+        `INSERT INTO accounts(id,name,type,on_budget,closed,starting_balance,starting_balance_date,sort_order,created_at,currency_code)
+         VALUES ('acc-cc-cny','CNY卡','creditCard',1,0,0,'2026-08-01',0,'2026-08-01T00:00:00.000Z','CNY')`
+      )
+      .run();
+    expect(() =>
+      emptyDb
+        .prepare("INSERT INTO assignments(currency_code, month, category_id, assigned) VALUES ('CNY','2026-08','cc:acc-cc-cny',500)")
+        .run()
+    ).not.toThrow();
+    expect(
+      emptyDb.prepare("SELECT assigned FROM assignments WHERE category_id='cc:acc-cc-cny' AND currency_code='CNY'").get().assigned
+    ).toBe(500);
+    emptyDb.prepare("DELETE FROM assignments WHERE category_id='cc:acc-cc-cny'").run();
+    emptyDb.prepare("DELETE FROM accounts WHERE id='acc-cc-cny'").run();
   });
 });
 
@@ -257,5 +322,38 @@ describe("migration restart is idempotent", () => {
     expect(ensureCurrencyMigrationState(emptyDb)).toBe("complete");
     expect(ledgerCodes(emptyDb)).toEqual(emptyBefore);
     expect(emptyDb.prepare("SELECT COUNT(*) c FROM schema_migrations WHERE version=10").get().c).toBe(1);
+  });
+});
+
+describe("schema finalization is atomic", () => {
+  it("rebuilds assignments and goals in one transaction and leaves pending null-currency tables alone", () => {
+    expect(primaryKeyColumns(db, "assignments")).toEqual(["month", "category_id"]);
+    expect(primaryKeyColumns(db, "goals")).toEqual(["category_id"]);
+    expect(db.prepare("SELECT currency_code FROM assignments").all().every((row) => row.currency_code == null)).toBe(true);
+
+    const dir = makeTempDataDir("ynab-finalize-atomic-");
+    const database = openRawSqlite(budgetDbPath(dir));
+    applyMigrations(database);
+    database.pragma("foreign_keys = OFF");
+    insertSetting(database, "initialized", "1");
+    insertSetting(database, "currency_migration_status", "complete");
+    database.prepare("INSERT INTO currency_ledgers(currency_code, sort_order) VALUES ('CNY', 0)").run();
+    insertCategoryGroup(database, { id: "g-atomic", name: "组" });
+    insertCategory(database, { id: "c-atomic", groupId: "g-atomic", name: "分类" });
+    database
+      .prepare("INSERT INTO assignments(currency_code, month, category_id, assigned) VALUES ('CNY','2026-08','c-atomic',1)")
+      .run();
+    database
+      .prepare("INSERT INTO goals(currency_code, category_id, type, target) VALUES ('USD','c-atomic','monthly',1)")
+      .run();
+    expect(primaryKeyColumns(database, "assignments")).toEqual(["month", "category_id"]);
+    expect(primaryKeyColumns(database, "goals")).toEqual(["category_id"]);
+
+    database.pragma("foreign_keys = ON");
+    expect(() => finalizeBudgetCurrencySchema(database)).toThrow();
+    expect(primaryKeyColumns(database, "assignments")).toEqual(["month", "category_id"]);
+    expect(primaryKeyColumns(database, "goals")).toEqual(["category_id"]);
+    expect(database.prepare("SELECT assigned FROM assignments WHERE category_id='c-atomic'").get().assigned).toBe(1);
+    database.close();
   });
 });

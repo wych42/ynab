@@ -5,6 +5,7 @@ import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 const h = vi.hoisted(() => {
   const budgetData = (month: string) => ({
     month,
+    currencyCode: "CNY",
     months: ["2026-02"],
     maxMonth: "2026-04",
     readyToAssign: 10000,
@@ -80,6 +81,8 @@ vi.mock("../store", () => {
     toast,
     setLang,
     refreshBoot,
+    activeCurrency: "CNY",
+    setActiveCurrency: vi.fn(),
   });
   return { useApp };
 });

@@ -1,4 +1,5 @@
 import { assertSupportedCurrency, listCurrencies, listDefaultEnabledCurrencies } from "./money.mjs";
+import { finalizeBudgetCurrencySchema } from "./currency-schema.mjs";
 
 export const CURRENCY_MIGRATION_STATUS_KEY = "currency_migration_status";
 export const REPORTING_CURRENCY_KEY = "reporting_currency";
@@ -56,7 +57,11 @@ export function seedDefaultCurrencyLedgers(database) {
 
 export function ensureCurrencyMigrationState(database) {
   const existing = readSetting(database, CURRENCY_MIGRATION_STATUS_KEY);
-  if (existing === CURRENCY_MIGRATION_PENDING || existing === CURRENCY_MIGRATION_COMPLETE) {
+  if (existing === CURRENCY_MIGRATION_PENDING) {
+    return existing;
+  }
+  if (existing === CURRENCY_MIGRATION_COMPLETE) {
+    finalizeBudgetCurrencySchema(database);
     return existing;
   }
   // 存量账户/金额只进入 pending，不读取 currency_symbol，也不回填币种。
@@ -65,6 +70,7 @@ export function ensureCurrencyMigrationState(database) {
     return CURRENCY_MIGRATION_PENDING;
   }
   seedDefaultCurrencyLedgers(database);
+  finalizeBudgetCurrencySchema(database);
   writeSetting(database, CURRENCY_MIGRATION_STATUS_KEY, CURRENCY_MIGRATION_COMPLETE);
   return CURRENCY_MIGRATION_COMPLETE;
 }

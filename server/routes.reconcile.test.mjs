@@ -42,22 +42,22 @@ function txCount(accountId) {
 }
 
 // 各用例独立账户，互不干扰
-const accEq = createAccount({ name: "对账-金额一致", type: "cash", startingBalance: 10000 });
+const accEq = createAccount({ name: "对账-金额一致", type: "cash", currencyCode: "CNY", startingBalance: 10000 });
 insertTx(accEq, { date: "2026-08-10", payee: "已清支出", amount: -3000 }); // 计算=7000
 
-const accPos = createAccount({ name: "对账-多出", type: "cash", startingBalance: 10000 }); // 计算=10000
+const accPos = createAccount({ name: "对账-多出", type: "cash", currencyCode: "CNY", startingBalance: 10000 }); // 计算=10000
 
-const accNeg = createAccount({ name: "对账-少了", type: "cash", startingBalance: 10000 });
+const accNeg = createAccount({ name: "对账-少了", type: "cash", currencyCode: "CNY", startingBalance: 10000 });
 insertTx(accNeg, { date: todayYmd(), payee: "已清支出", amount: -2000 }); // 计算=8000
 
-const accClear = createAccount({ name: "对账-补勾清算", type: "cash", startingBalance: 10000 });
+const accClear = createAccount({ name: "对账-补勾清算", type: "cash", currencyCode: "CNY", startingBalance: 10000 });
 insertTx(accClear, { date: "2026-08-11", payee: "未清支出A", amount: -800, cleared: 0 });
 insertTx(accClear, { date: "2026-08-12", payee: "转账腿", amount: -500, cleared: 0, transferAccountId: accPos });
 
-const accKeep = createAccount({ name: "对账-默认不动未清", type: "cash", startingBalance: 10000 });
+const accKeep = createAccount({ name: "对账-默认不动未清", type: "cash", currencyCode: "CNY", startingBalance: 10000 });
 insertTx(accKeep, { date: "2026-08-13", payee: "未清支出B", amount: -600, cleared: 0 });
 
-const accUncat = createAccount({ name: "对账-未分类过滤", type: "cash", startingBalance: 5000 });
+const accUncat = createAccount({ name: "对账-未分类过滤", type: "cash", currencyCode: "CNY", startingBalance: 5000 });
 insertTx(accUncat, { date: todayYmd(), payee: "普通未分类", amount: -2000, cleared: 0 }); // 计算=3000
 
 const cur = currentMonth();
@@ -105,18 +105,18 @@ describe("POST /api/reconcile/:accountId", () => {
   });
 
   it("负差额减少当前月待分配金额（未分配承担差额）", async () => {
-    const b1 = (await call("GET", `/api/budget/${cur}`)).json.readyToAssign;
+    const b1 = (await call("GET", `/api/budget/${cur}?currency=CNY`)).json.readyToAssign;
     const r = await call("POST", `/api/reconcile/${accNeg}`, { statementBalance: 5000 });
     expect(r.json.adjustment).toBe(-3000);
-    const b2 = (await call("GET", `/api/budget/${cur}`)).json.readyToAssign;
+    const b2 = (await call("GET", `/api/budget/${cur}?currency=CNY`)).json.readyToAssign;
     expect(b2 - b1).toBe(-3000);
   });
 
   it("正差额增加当前月待分配金额", async () => {
-    const b1 = (await call("GET", `/api/budget/${cur}`)).json.readyToAssign;
+    const b1 = (await call("GET", `/api/budget/${cur}?currency=CNY`)).json.readyToAssign;
     const r = await call("POST", `/api/reconcile/${accPos}`, { statementBalance: 11000 });
     expect(r.json.adjustment).toBe(500);
-    const b2 = (await call("GET", `/api/budget/${cur}`)).json.readyToAssign;
+    const b2 = (await call("GET", `/api/budget/${cur}?currency=CNY`)).json.readyToAssign;
     expect(b2 - b1).toBe(500);
   });
 
@@ -134,7 +134,7 @@ describe("POST /api/reconcile/:accountId", () => {
     const amounts = list2.json.transactions.map((t) => t.amount);
     expect(amounts).not.toContain(1200);
 
-    const bud = (await call("GET", `/api/budget/${cur}`)).json;
+    const bud = (await call("GET", `/api/budget/${cur}?currency=CNY`)).json;
     expect(bud.uncategorizedCount).toBeGreaterThanOrEqual(1);
     // 普通未分类行计入；差额行不计入 —— 用另一笔已知差额前后对比更直接：
     const c1 = db.prepare(

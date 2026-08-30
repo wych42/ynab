@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtMoney, fmtMoneyShort, fmtMonth, fmtMonthShort, parseAmountToCents } from "../format";
+import { fmtMoney, fmtMoneyShort, fmtMonth, fmtMonthShort, formatMinorInput, localeForLang } from "../format";
+import { parseAmountToMinor } from "../money";
 import type { BudCategory, BudGroup, BudgetData } from "../types";
 import { Btn, Field, Modal, Spinner, inputCls } from "../components/ui";
 
@@ -49,9 +50,10 @@ const GRID =
 const MONTH_GRID = "grid grid-cols-[92px_76px_100px] items-center gap-x-2";
 
 export function BudgetPage() {
-  const { boot, t, lang, refreshBoot, toast } = useApp();
+  const { boot, t, lang, refreshBoot, toast, activeCurrency } = useApp();
   const [base, setBase] = useState<string>("");
   const [win, setWin] = useState<{ months: string[]; data: Record<string, BudgetData> } | null>(null);
+  const currencyRef = useRef<string | null>(null);
   const [sel, setSel] = useState<Selection>(null);
   const [editing, setEditing] = useState<{ catId: string; month: string; value: string } | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -69,20 +71,28 @@ export function BudgetPage() {
     if (!base && boot) setBase(boot.currentMonth);
   }, [boot, base]);
 
-  const load = useCallback(async (m: string) => {
+  const load = useCallback(async (m: string, currency: string) => {
     const months = [shiftMonth(m, -1), m, shiftMonth(m, 1)];
-    const list = await Promise.all(months.map((mm) => api.budget(mm).catch(() => null)));
+    const list = await Promise.all(months.map((mm) => api.budget(mm, currency).catch(() => null)));
+    if (currencyRef.current !== currency) return;
     const data: Record<string, BudgetData> = {};
     list.forEach((d, i) => {
-      if (d) data[months[i]] = d;
+      if (d && d.currencyCode === currency) data[months[i]] = d;
     });
     if (!data[m]) throw new Error("bad month");
     setWin({ months, data });
   }, []);
 
   useEffect(() => {
-    if (base) load(base).catch(() => toast(t("common_error"), "err"));
-  }, [base, load, t, toast]);
+    currencyRef.current = activeCurrency;
+    setWin(null);
+    setSel(null);
+    setEditing(null);
+  }, [activeCurrency]);
+
+  useEffect(() => {
+    if (base && activeCurrency) load(base, activeCurrency).catch(() => toast(t("common_error"), "err"));
+  }, [base, activeCurrency, load, t, toast]);
 
   useEffect(() => {
     const h = () => setGroupMenu(null);
@@ -108,7 +118,12 @@ export function BudgetPage() {
     stripRef.current?.querySelector(`[data-m="${base}"]`)?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [base, loaded]);
 
-  if (!boot || !loaded || !win) return <Spinner />;
+  if (!boot || !activeCurrency || !loaded || !win) return <Spinner />;
+  const currency = activeCurrency;
+  if (curHasMismatch(win, base, currency)) return <Spinner />;
+
+  const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
+  const moneyShort = (amount: number) => fmtMoneyShort(amount, { currencyCode: currency, locale: localeForLang(lang) });
 
   const monthsWin = win.months;
   const cur = win.data[base];
@@ -117,21 +132,29 @@ export function BudgetPage() {
   const canNext = base < cur.maxMonth;
   const canPrev = base > firstMonth;
 
-  const apply = (d: BudgetData) =>
+  const apply = (d: BudgetData) => {
+    if (d.currencyCode !== currencyRef.current) return;
     setWin((w) => (w && w.data[d.month] ? { ...w, data: { ...w.data, [d.month]: d } } : w));
+  };
 
   const commitAssign = async (month: string, catId: string, value: string) => {
     setEditing(null);
-    const cents = parseAmountToCents(value);
-    if (cents == null || cents < 0) return;
-    apply(await api.assign(month, catId, cents));
+    if (!currencyRef.current) return;
+    let cents: number;
+    try {
+      cents = parseAmountToMinor(value, currencyRef.current);
+    } catch {
+      return;
+    }
+    if (cents < 0) return;
+    apply(await api.assign(month, catId, cents, currencyRef.current));
   };
 
   const copyPrev = async (m: string) => {
-    if (!confirm(t("budget_copyLastConfirm"))) return;
+    if (!confirm(t("budget_copyLastConfirm")) || !currencyRef.current) return;
     setCopying(true);
     try {
-      apply(await api.copyLastMonth(m));
+      apply(await api.copyLastMonth(m, currencyRef.current));
       toast(t("budget_copyLastOk"));
     } catch {
       toast(t("common_error"), "err");
@@ -161,6 +184,9 @@ export function BudgetPage() {
         {/* Header */}
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 pb-2 pt-3 md:px-6">
+            <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold tracking-wide text-slate-600">
+              {t("budget_currency")} <span>{currency}</span>
+            </span>
             <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
               <button
                 onClick={() => canPrev && setBase(shiftMonth(base, -1))}
@@ -198,7 +224,7 @@ export function BudgetPage() {
                 } ${sel?.kind === "rta" ? "ring-2 ring-offset-2 ring-brand-300" : ""}`}
               >
                 <span className="text-xs font-medium opacity-90">{t("budget_rta")}</span>
-                <span className="num text-lg font-bold">{fmtMoney(cur.readyToAssign)}</span>
+                <span className="num text-lg font-bold">{money(cur.readyToAssign)}</span>
                 <ChevronDown size={14} className="self-center opacity-70" />
               </button>
               {sel?.kind === "rta" && (
@@ -206,11 +232,11 @@ export function BudgetPage() {
                   <div className="space-y-1.5 text-[13px]">
                     <div className="flex justify-between text-slate-500">
                       <span>{t("budget_incomeThisMonth")}</span>
-                      <b className="num text-emerald-600">{fmtMoney(cur.incomeThisMonth)}</b>
+                      <b className="num text-emerald-600">{money(cur.incomeThisMonth)}</b>
                     </div>
                     <div className="flex justify-between text-slate-500">
                       <span>{t("budget_assignedTotal")}</span>
-                      <b className="num text-slate-700">{fmtMoney(cur.assignedTotal)}</b>
+                      <b className="num text-slate-700">{money(cur.assignedTotal)}</b>
                     </div>
                     <div className="flex justify-between border-t border-slate-100 pt-1.5 text-slate-500">
                       <span>{t("rep_aom")}</span>
@@ -220,7 +246,7 @@ export function BudgetPage() {
                   <Btn
                     variant="primary"
                     className="mt-3 w-full"
-                    onClick={() => api.autoAssign(cur.month).then(apply).then(() => toast(t("budget_autoAssign") + " ✓"))}
+                    onClick={() => api.autoAssign(cur.month, currency).then(apply).then(() => toast(t("budget_autoAssign") + " ✓"))}
                   >
                     <Sparkles size={14} /> {t("budget_autoAssign")}
                   </Btn>
@@ -232,7 +258,7 @@ export function BudgetPage() {
               {overspentCats.length > 0 && (
                 <Btn variant="danger" onClick={() => setCoverOpen(true)}>
                   <AlertTriangle size={14} />
-                  {t("budget_overspent")} {fmtMoney(Math.abs(cur.overspentTotal))}
+                  {t("budget_overspent")} {money(Math.abs(cur.overspentTotal))}
                 </Btn>
               )}
               <Btn onClick={() => setMoveOpen(true)}>
@@ -363,7 +389,7 @@ export function BudgetPage() {
             try {
               await api.deleteCategory(id);
               setSel(null);
-              await Promise.all([load(base), refreshBoot()]);
+              if (currency) await Promise.all([load(base, currency), refreshBoot()]);
               toast("OK");
             } catch {
               toast(t("account_deleteWarn"), "err");
@@ -401,7 +427,7 @@ export function BudgetPage() {
           onClose={() => setAddOpen(null)}
           onDone={async () => {
             setAddOpen(null);
-            await Promise.all([load(base), refreshBoot()]);
+            if (currency) await Promise.all([load(base, currency), refreshBoot()]);
           }}
         />
       )}
@@ -440,7 +466,7 @@ export function BudgetPage() {
                     setGroupMenu(null);
                     try {
                       await api.deleteGroup(grp.id);
-                      await Promise.all([load(base), refreshBoot()]);
+                      if (currency) await Promise.all([load(base, currency), refreshBoot()]);
                     } catch {
                       toast(lang === "zh" ? "分组不为空" : "Group is not empty", "err");
                     }
@@ -462,12 +488,32 @@ export function BudgetPage() {
             if (renameOpen.kind === "group") await api.renameGroup(renameOpen.id, name);
             else await api.renameCategory(renameOpen.id, name);
             setRenameOpen(null);
-            await Promise.all([load(base), refreshBoot()]);
+            if (currency) await Promise.all([load(base, currency), refreshBoot()]);
           }}
         />
       )}
     </div>
   );
+}
+
+function useBudgetMoney() {
+  const { lang, activeCurrency } = useApp();
+  const currency = activeCurrency ?? "";
+  const locale = localeForLang(lang);
+  return {
+    currency,
+    money: (amount: number) => fmtMoney(amount, { currencyCode: currency || undefined, locale }),
+    moneyShort: (amount: number) => fmtMoneyShort(amount, { currencyCode: currency || undefined, locale }),
+  };
+}
+
+function curHasMismatch(
+  win: { data: Record<string, BudgetData> },
+  base: string,
+  currency: string,
+): boolean {
+  const cur = win.data[base];
+  return !cur || cur.currencyCode !== currency;
 }
 
 function shiftMonth(ym: string, n: number): string {
@@ -529,6 +575,7 @@ function MonthHead({
   onCopy: () => void;
 }) {
   const { t, lang } = useApp();
+  const { moneyShort } = useBudgetMoney();
   const rta = data?.readyToAssign;
   return (
     <div className={`col-span-3 flex items-center justify-between gap-1 rounded-lg pl-2 pr-1 ${active ? "bg-brand-50" : "bg-slate-100"}`}>
@@ -544,7 +591,7 @@ function MonthHead({
       <span className="flex shrink-0 items-center gap-0.5">
         {rta != null && (
           <span className={`num text-[10px] ${rta < 0 ? "font-semibold text-rose-500" : "text-slate-400"}`} title={t("budget_rta")}>
-            {fmtMoneyShort(rta)}
+            {moneyShort(rta)}
           </span>
         )}
         <button
@@ -592,6 +639,7 @@ function GroupBlock({
   onQuickAdd: () => void;
 }) {
   const { t, lang } = useApp();
+  const { currency, money } = useBudgetMoney();
   const cats = group.categories;
   const groupName = group.virtual ? (lang === "zh" ? "信用卡还款" : "Credit Card Payments") : group.name;
 
@@ -632,13 +680,13 @@ function GroupBlock({
           return (
             <div key={m} className={`${MONTH_GRID} col-span-3 rounded-lg py-0.5 ${m === activeMonth && has ? "bg-brand-50" : has ? "bg-slate-100" : ""}`}>
               <div className="num pr-2 text-right text-[13px] font-semibold text-slate-500">
-                {has ? fmtMoney(tot.assigned) : "–"}
+                {has ? money(tot.assigned) : "–"}
               </div>
               <div className="num pr-2 text-right text-[13px] font-semibold text-slate-500">
-                {has ? fmtMoney(tot.activity) : "–"}
+                {has ? money(tot.activity) : "–"}
               </div>
               <div className="num pr-2 text-right text-[13px] font-bold text-slate-600">
-                {has ? fmtMoney(tot.available) : "–"}
+                {has ? money(tot.available) : "–"}
               </div>
             </div>
           );
@@ -663,7 +711,7 @@ function GroupBlock({
               editingValue={editing?.catId === c.id ? editing.value : null}
               onStartEdit={(m) => {
                 const cc = catIndex[m]?.get(c.id);
-                setEditing({ catId: c.id, month: m, value: ((cc?.assigned ?? 0) / 100).toString() });
+                setEditing({ catId: c.id, month: m, value: currency ? formatMinorInput(cc?.assigned ?? 0, currency) : "" });
               }}
               onChange={(v) => setEditing((e) => (e && e.catId === c.id ? { ...e, value: v } : e))}
               onCancelEdit={() => setEditing(null)}
@@ -713,6 +761,7 @@ function Row({
   onCancelEdit: () => void;
   onCommit: (month: string, v: string) => void;
 }) {
+  const { money } = useBudgetMoney();
   return (
     <div
       onClick={onSelect}
@@ -762,16 +811,16 @@ function Row({
                     !cat || cat.assigned === 0 ? "text-slate-300 hover:text-brand-500" : "font-medium text-slate-700"
                   }`}
                 >
-                  {!cat || cat.assigned === 0 ? "–" : fmtMoney(cat.assigned)}
+                  {!cat || cat.assigned === 0 ? "–" : money(cat.assigned)}
                 </button>
               )}
             </div>
             <div className={`num pr-2 text-right ${!cat ? "text-slate-300" : cat.activity > 0 ? "text-emerald-600" : "text-slate-500"}`}>
-              {!cat ? "–" : fmtMoney(cat.activity)}
+              {!cat ? "–" : money(cat.activity)}
             </div>
             <div className="pr-2 text-right">
               <span className={`num rounded-md px-2 py-1 text-[13px] font-semibold ${!cat ? "text-slate-300" : availCls(cat)}`}>
-                {!cat ? "–" : fmtMoney(cat.available)}
+                {!cat ? "–" : money(cat.available)}
               </span>
             </div>
           </div>
@@ -803,6 +852,7 @@ function Inspector({
   onDeleteCat: (id: string) => void;
 }) {
   const { t, lang, toast } = useApp();
+  const { currency, money } = useBudgetMoney();
   const [custom, setCustom] = useState("");
 
   const cat = sel.kind === "cat" ? sel.cat : null;
@@ -814,19 +864,19 @@ function Inspector({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   const assign = async (cents: number) => {
-    if (!cat) return;
-    onApply(await api.assign(data.month, cat.id, cents));
-    toast(fmtMoney(cents) + " ✓");
+    if (!cat || !currency) return;
+    onApply(await api.assign(data.month, cat.id, cents, currency));
+    toast(money(cents) + " ✓");
   };
 
   const goalForm = useMemo(() => {
     if (!cat?.goal) return { type: "", target: "", date: "" };
     return {
       type: cat.goal.type,
-      target: cat.goal.target ? (cat.goal.target / 100).toString() : "",
+      target: cat.goal.target ? formatMinorInput(cat.goal.target, currency || "CNY") : "",
       date: cat.goal.target_month ?? "",
     };
-  }, [cat?.goal]);
+  }, [cat?.goal, currency]);
   const [gf, setGf] = useState(goalForm);
   useEffect(() => setGf(goalForm), [goalForm]);
 
@@ -848,14 +898,14 @@ function Inspector({
           <>
             <SectionTitle icon={<Coins size={15} />} title={t("inspector_readyToAssign")} onClose={onClose} />
             <div className={`num mt-3 text-3xl font-bold ${data.readyToAssign < 0 ? "text-rose-600" : "text-brand-600"}`}>
-              {fmtMoney(data.readyToAssign)}
+              {money(data.readyToAssign)}
             </div>
             <p className="mt-2 text-xs leading-relaxed text-slate-400">
               {lang === "zh"
                 ? "这是尚未分配任何任务的钱。YNAB 第一法则：给每一块钱一个任务，把它分配到下面的分类里。"
                 : "This is money with no job yet. Rule one: give every dollar a job by assigning it below."}
             </p>
-            <Btn variant="primary" className="mt-4 w-full" onClick={() => api.autoAssign(data.month).then(onApply)}>
+            <Btn variant="primary" className="mt-4 w-full" onClick={() => currency && api.autoAssign(data.month, currency).then(onApply)}>
               <Sparkles size={14} /> {t("budget_autoAssign")}
             </Btn>
             <Btn className="mt-2 w-full" onClick={onMove}>
@@ -883,24 +933,24 @@ function Inspector({
             <div className={`mt-3 rounded-xl p-3 ${cat.available < 0 ? "bg-rose-50" : "bg-slate-50"}`}>
               <div className="text-[11px] font-medium uppercase tracking-wide text-slate-400">{t("inspector_available")}</div>
               <div className={`num mt-0.5 text-3xl font-bold ${cat.available < 0 ? "text-rose-600" : "text-slate-800"}`}>
-                {fmtMoney(cat.available)}
+                {money(cat.available)}
               </div>
               <div className="mt-1 text-[11px] text-slate-400">{t("inspector_leftover")}</div>
               <div className="mt-2 grid grid-cols-2 gap-2 text-[13px]">
                 <div>
                   <span className="text-slate-400">{t("inspector_assigned")}: </span>
-                  <b className="num text-slate-600">{fmtMoney(cat.assigned)}</b>
+                  <b className="num text-slate-600">{money(cat.assigned)}</b>
                 </div>
                 <div>
                   <span className="text-slate-400">{t("inspector_activity")}: </span>
-                  <b className={`num ${cat.activity > 0 ? "text-emerald-600" : "text-slate-600"}`}>{fmtMoney(cat.activity)}</b>
+                  <b className={`num ${cat.activity > 0 ? "text-emerald-600" : "text-slate-600"}`}>{money(cat.activity)}</b>
                 </div>
               </div>
             </div>
 
             {cat.available < 0 && (
               <Btn variant="danger" className="mt-3 w-full" onClick={onCover}>
-                <AlertTriangle size={14} /> {t("budget_cover")} ({fmtMoney(Math.abs(cat.available))})
+                <AlertTriangle size={14} /> {t("budget_cover")} ({money(Math.abs(cat.available))})
               </Btn>
             )}
             <Btn className="mt-2 w-full" onClick={onMove}>
@@ -911,11 +961,11 @@ function Inspector({
               <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{t("inspector_quickAssign")}</div>
               <div className="space-y-1.5">
                 {cat.need != null && cat.need.need > 0 && (
-                  <QuickBtn label={t("inspector_needTarget", { amt: fmtMoney(cat.need.need) })} onClick={() => assign(cat.need!.need)} />
+                  <QuickBtn label={t("inspector_needTarget", { amt: money(cat.need.need) })} onClick={() => assign(cat.need!.need)} />
                 )}
-                <QuickBtn label={t("inspector_lastMonth", { amt: fmtMoney(cat.lastAssigned) })} onClick={() => assign(cat.lastAssigned)} />
+                <QuickBtn label={t("inspector_lastMonth", { amt: money(cat.lastAssigned) })} onClick={() => assign(cat.lastAssigned)} />
                 {cat.avgSpend > 0 && (
-                  <QuickBtn label={t("inspector_avgSpend", { amt: fmtMoney(cat.avgSpend) })} onClick={() => assign(cat.avgSpend)} />
+                  <QuickBtn label={t("inspector_avgSpend", { amt: money(cat.avgSpend) })} onClick={() => assign(cat.avgSpend)} />
                 )}
                 <div className="flex gap-1.5 pt-1">
                   <input
@@ -924,17 +974,26 @@ function Inspector({
                     value={custom}
                     onChange={(e) => setCustom(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const cents = parseAmountToCents(custom);
-                        if (cents != null && cents >= 0) assign(cents).then(() => setCustom(""));
+                      if (e.key === "Enter" && currency) {
+                        try {
+                          const cents = parseAmountToMinor(custom, currency);
+                          if (cents >= 0) assign(cents).then(() => setCustom(""));
+                        } catch {
+                          // invalid amount for this currency
+                        }
                       }
                     }}
                   />
                   <Btn
                     variant="primary"
                     onClick={() => {
-                      const cents = parseAmountToCents(custom);
-                      if (cents != null && cents >= 0) assign(cents).then(() => setCustom(""));
+                      if (!currency) return;
+                      try {
+                        const cents = parseAmountToMinor(custom, currency);
+                        if (cents >= 0) assign(cents).then(() => setCustom(""));
+                      } catch {
+                        // invalid amount for this currency
+                      }
                     }}
                   >
                     ✓
@@ -949,7 +1008,7 @@ function Inspector({
                   note={cat.note ?? ""}
                   onSave={async (note) => {
                     await api.updateCategory(cat.id, { note });
-                    onApply(await api.budget(data.month));
+                    if (currency) onApply(await api.budget(data.month, currency));
                     toast("✓");
                   }}
                 />
@@ -965,20 +1024,25 @@ function Inspector({
                   lang={lang}
                   t={t}
                   onSave={async () => {
-                    if (!gf.type) return;
-                    const cents = parseAmountToCents(gf.target || "0");
-                    if (cents == null) return;
+                    if (!gf.type || !currency) return;
+                    let cents: number;
+                    try {
+                      cents = parseAmountToMinor(gf.target || "0", currency);
+                    } catch {
+                      return;
+                    }
                     await api.setGoal(cat.id, {
                       type: gf.type as "monthly" | "targetBalance" | "targetByDate",
                       target: cents,
                       targetMonth: gf.date || null,
-                    });
-                    onApply(await api.budget(data.month));
+                    }, currency);
+                    onApply(await api.budget(data.month, currency));
                     toast("✓");
                   }}
                   onClear={async () => {
-                    await api.clearGoal(cat.id);
-                    onApply(await api.budget(data.month));
+                    if (!currency) return;
+                    await api.clearGoal(cat.id, currency);
+                    onApply(await api.budget(data.month, currency));
                   }}
                 />
               </div>
@@ -1130,6 +1194,7 @@ function GoalEditor({
 
 function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: () => void; onDone: (d: BudgetData) => void }) {
   const { t, lang, toast } = useApp();
+  const { currency, money } = useBudgetMoney();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [amount, setAmount] = useState("");
@@ -1137,7 +1202,7 @@ function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: 
     <optgroup key={g.id} label={g.virtual ? (lang === "zh" ? "信用卡还款" : "Credit Card Payments") : g.name}>
       {g.categories.map((c) => (
         <option key={c.id} value={c.id}>
-          {c.name} — {fmtMoney(Math.max(c.available, 0))}
+          {c.name} — {money(Math.max(c.available, 0))}
         </option>
       ))}
     </optgroup>,
@@ -1164,9 +1229,15 @@ function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: 
         variant="primary"
         className="w-full"
         onClick={async () => {
-          const cents = parseAmountToCents(amount);
-          if (!from || !to || from === to || !cents || cents <= 0) return;
-          onDone(await api.moveMoney(data.month, from, to, cents));
+          if (!from || !to || from === to || !currency) return;
+          let cents: number;
+          try {
+            cents = parseAmountToMinor(amount, currency);
+          } catch {
+            return;
+          }
+          if (cents <= 0) return;
+          onDone(await api.moveMoney(data.month, from, to, cents, currency));
           toast("✓");
         }}
       >
@@ -1188,6 +1259,7 @@ function CoverModal({
   onDone: (d: BudgetData) => void;
 }) {
   const { t, lang } = useApp();
+  const { currency, money } = useBudgetMoney();
   const overspent = data.groups.flatMap((g) => g.categories).filter((c) => c.available < 0);
   const [catId, setCatId] = useState(initialCatId ?? overspent[0]?.id ?? "");
   const [fromId, setFromId] = useState<string>("rta");
@@ -1205,26 +1277,26 @@ function CoverModal({
               <select className={inputCls} value={catId} onChange={(e) => setCatId(e.target.value)}>
                 {overspent.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} ({fmtMoney(c.available)})
+                    {c.name} ({money(c.available)})
                   </option>
                 ))}
               </select>
             </Field>
           )}
           <p className="mb-3 text-[13px] leading-relaxed text-slate-500">
-            {t("cover_intro", { name: catName, amount: fmtMoney(Math.abs(overspent.find((c) => c.id === catId)?.available ?? 0)) })}
+            {t("cover_intro", { name: catName, amount: money(Math.abs(overspent.find((c) => c.id === catId)?.available ?? 0)) })}
           </p>
           <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
             {data.readyToAssign > 0 && (
               <DonorOption
                 active={fromId === "rta"}
                 label={t("cover_useRta")}
-                sub={fmtMoney(data.readyToAssign)}
+                sub={money(data.readyToAssign)}
                 onClick={() => setFromId("rta")}
               />
             )}
             {donors.map((c) => (
-              <DonorOption key={c.id} active={fromId === c.id} label={c.name ?? ""} sub={fmtMoney(c.available)} onClick={() => setFromId(c.id)} />
+              <DonorOption key={c.id} active={fromId === c.id} label={c.name ?? ""} sub={money(c.available)} onClick={() => setFromId(c.id)} />
             ))}
           </div>
           <Btn
@@ -1232,7 +1304,7 @@ function CoverModal({
             className="mt-4 w-full"
             onClick={async () => {
               if (!catId || !fromId) return;
-              onDone(await api.coverOverspending(data.month, catId, fromId));
+              if (currency) onDone(await api.coverOverspending(data.month, catId, fromId, currency));
             }}
           >
             {t("inspector_coverBtn")}

@@ -18,7 +18,7 @@ const catId = (() => {
 })();
 
 function seed({ inflow, catOutflow, uncatOutflow, assigned }) {
-  const acc = createAccount({ name: "现金", type: "cash", startingBalance: 0 });
+  const acc = createAccount({ name: "现金", type: "cash", currencyCode: "CNY", startingBalance: 0 });
   const ins = db.prepare(
     "INSERT INTO transactions(id,account_id,date,payee_name,amount,category_id,is_start,created_at) VALUES(?,?,?,?,?,?,0,?)"
   );
@@ -27,14 +27,14 @@ function seed({ inflow, catOutflow, uncatOutflow, assigned }) {
   if (catOutflow) ins.run(uid(), acc, today, "消费", -catOutflow, catId, new Date().toISOString());
   if (uncatOutflow) ins.run(uid(), acc, today, "神秘扣款", -uncatOutflow, null, new Date().toISOString());
   if (assigned)
-    db.prepare("INSERT INTO assignments(month,category_id,assigned) VALUES(?,?,?)").run(currentMonth(), catId, assigned);
+    db.prepare("INSERT INTO assignments(currency_code,month,category_id,assigned) VALUES(?,?,?,?)").run("CNY", currentMonth(), catId, assigned);
   return acc;
 }
 
 describe("computeBudget", () => {
   it("categorized activity does not touch rta: rta = inflow - assigned", () => {
     seed({ inflow: 15000, catOutflow: 4000, uncatOutflow: 0, assigned: 10000 });
-    const { byMonth } = computeBudget(currentMonth());
+    const { byMonth } = computeBudget(currentMonth(), "CNY");
     const s = byMonth.get(currentMonth());
     expect(s.inflow).toBe(15000);
     expect(s.assigned[catId]).toBe(10000);
@@ -45,7 +45,7 @@ describe("computeBudget", () => {
 
   it("uncategorized outflow reduces readyToAssign (money left without a job)", () => {
     seed({ inflow: 0, catOutflow: 0, uncatOutflow: 7000, assigned: 0 });
-    const { byMonth } = computeBudget(currentMonth());
+    const { byMonth } = computeBudget(currentMonth(), "CNY");
     const s = byMonth.get(currentMonth());
     // 基线 RTA=5000（上一用例），本用例只新增一笔 -7000 未分类流出
     expect(s.readyToAssign).toBe(5000 - 7000);
@@ -56,7 +56,7 @@ describe("computeBudget", () => {
 describe("listMonths", () => {
   it("builds contiguous months up to the target month", () => {
     const cur = currentMonth();
-    const months = listMonths(addMonths(cur, 2));
+    const months = listMonths(addMonths(cur, 2), "CNY");
     expect(months.length).toBeGreaterThanOrEqual(3);
     expect(months.at(-1)).toBe(addMonths(cur, 2));
     for (let i = 1; i < months.length; i++) {
@@ -72,16 +72,16 @@ describe("computeBudget：期初余额", () => {
   });
 
   it("预算内现金账户的期初余额计入 Ready to Assign", () => {
-    const acc = createAccount({ name: "储蓄", type: "checking", startingBalance: 50000, startingDate: `${currentMonth()}-01` });
-    const { byMonth } = computeBudget(currentMonth());
+    const acc = createAccount({ name: "储蓄", type: "checking", currencyCode: "CNY", startingBalance: 50000, startingDate: `${currentMonth()}-01` });
+    const { byMonth } = computeBudget(currentMonth(), "CNY");
     const s = byMonth.get(currentMonth());
     expect(s.inflow).toBe(50000);
     expect(s.readyToAssign).toBe(50000);
   });
 
   it("负债账户的负期初余额作为负流入扣减 Ready to Assign", () => {
-    const cc = createAccount({ name: "信用卡", type: "creditCard", startingBalance: -2000, startingDate: `${currentMonth()}-01` });
-    const { byMonth } = computeBudget(currentMonth());
+    const cc = createAccount({ name: "信用卡", type: "creditCard", currencyCode: "CNY", startingBalance: -2000, startingDate: `${currentMonth()}-01` });
+    const { byMonth } = computeBudget(currentMonth(), "CNY");
     const s = byMonth.get(currentMonth());
     expect(s.inflow).toBe(-2000);
     expect(s.readyToAssign).toBe(-2000);

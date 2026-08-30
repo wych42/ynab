@@ -145,9 +145,9 @@ describe("financial write lock while migration is pending", () => {
       await call("GET", "/api/accounts"),
       await call("GET", `/api/accounts/${accountId}/transactions`),
       await call("GET", "/api/transactions"),
-      await call("GET", `/api/budget/${month}`),
+      await call("GET", `/api/budget/${month}?currency=CNY`),
       await call("GET", "/api/categories"),
-      await call("GET", "/api/reports/overview"),
+      await call("GET", "/api/reports/overview?currency=CNY"),
     ];
     for (const r of reads) {
       expect(r.status).toBe(200);
