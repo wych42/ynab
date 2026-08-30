@@ -4,8 +4,9 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { migrations } from "./migrations.mjs";
-import { ensureCurrencyMigrationState } from "./currency-state.mjs";
+import { ensureCurrencyMigrationState, isCurrencyMigrationRequired } from "./currency-state.mjs";
 import { createAccountRecord, resolveInternalAccountCurrency } from "./account-currency.mjs";
+import { ensureSystemCategories } from "./currency-ledger.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
@@ -125,6 +126,7 @@ export function openBudgetDatabase(filePath) {
   runMigrations(database);
   ensureAppInitialized(database);
   ensureCurrencyMigrationState(database);
+  if (!isCurrencyMigrationRequired(database)) ensureSystemCategories(database);
   return database;
 }
 

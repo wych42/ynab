@@ -2,7 +2,7 @@
 
 > Milestone：07
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：统一交易、对账和换汇写入
 >

@@ -74,6 +74,20 @@ import {
   confirmCurrencyMigration,
   getCurrencyMigrationPreview,
 } from "./currency-migration.mjs";
+import {
+  assertCategoryDeletable,
+  deleteTransaction,
+  deleteTransactions,
+  isCurrencyLedgerError,
+  postTransaction,
+  postTransfer,
+  reconcileAccount,
+  setTransactionCategory,
+  setTransactionCleared,
+  setTransactionsCategory,
+  transferInputFromHttp,
+  updateTransaction,
+} from "./currency-ledger.mjs";
 
 export const api = express.Router();
 
@@ -83,6 +97,14 @@ function sendAccountCurrencyError(res, error) {
   if (isAccountCurrencyError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
   }
+  throw error;
+}
+
+function sendLedgerError(res, error) {
+  if (isCurrencyLedgerError(error) || isAccountCurrencyError(error)) {
+    return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  if (error instanceof Error && error.message) return bad(res, error.message);
   throw error;
 }
 
@@ -159,6 +181,7 @@ const FINANCIAL_WRITE_ROUTES = [
   ["PATCH", /^\/transactions\/[^/]+\/category$/],
   ["PATCH", /^\/transactions\/[^/]+\/cleared$/],
   ["POST", /^\/transactions$/],
+  ["POST", /^\/transfers$/],
   ["POST", /^\/transactions\/bulk-category$/],
   ["POST", /^\/transactions\/bulk-delete$/],
   ["PUT", /^\/transactions\/[^/]+$/],
@@ -179,13 +202,6 @@ function isFinancialWrite(req) {
 
 // 额外提示词会被嵌入 LLM 系统提示词（网页 + IM 共用），设一个合理上限防止异常内容撑爆请求体
 const MAX_EXTRA_PROMPT_CHARS = 20000;
-
-function isIncomeCategory(categoryId) {
-  if (!categoryId) return false;
-  return !!db
-    .prepare("SELECT 1 FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE c.id=? AND g.is_income=1")
-    .get(categoryId);
-}
 
 /* --------------------------- 认证 --------------------------- */
 
@@ -891,7 +907,10 @@ api.get("/accounts/:id/transactions", (req, res) => {
   if (!acc) return bad(res, "not found");
   const rows = db
     .prepare(
-      `SELECT t.*, c.name AS category_name, o.name AS other_account_name, o.type AS other_account_type
+      `SELECT t.*, c.name AS category_name, o.name AS other_account_name, o.type AS other_account_type,
+              o.currency_code AS other_currency_code,
+              (SELECT t2.amount FROM transactions t2
+                WHERE t.pair_id IS NOT NULL AND t2.pair_id=t.pair_id AND t2.id!=t.id LIMIT 1) AS other_amount
        FROM transactions t
        LEFT JOIN categories c ON c.id=t.category_id
        LEFT JOIN accounts o ON o.id=t.transfer_account_id
@@ -902,12 +921,12 @@ api.get("/accounts/:id/transactions", (req, res) => {
   const out = [];
   for (const r of rows) {
     if (!r.is_start) running += r.amount;
-    out.push({ ...transformTx(r), balance: running });
+    out.push({ ...transformTx(r, acc.currency_code), balance: running });
   }
   res.json({ account: presentAccount(acc, { balance: running }), transactions: out.reverse() });
 });
 
-function transformTx(r) {
+function transformTx(r, accountCurrencyCode) {
   return {
     id: r.id,
     accountId: r.account_id,
@@ -917,6 +936,8 @@ function transformTx(r) {
     transferAccountId: r.transfer_account_id,
     otherAccountName: r.other_account_name,
     otherAccountType: r.other_account_type,
+    otherAccountCurrencyCode: r.other_currency_code ?? null,
+    otherAmountMinor: r.other_amount ?? null,
     categoryId: r.category_id,
     categoryName: r.category_name,
     memo: r.memo,
@@ -924,6 +945,9 @@ function transformTx(r) {
     cleared: r.cleared,
     reconciled: r.reconciled,
     account_name: r.account_name,
+    currencyCode: accountCurrencyCode ?? r.account_currency_code ?? r.currency_code ?? null,
+    originalCurrencyCode: r.original_currency_code ?? null,
+    originalAmountMinor: r.original_amount ?? null,
   };
 }
 
@@ -954,209 +978,110 @@ api.get("/transactions", (req, res) => {
   const rows = db
     .prepare(
       `SELECT t.*, c.name AS category_name, a.name AS account_name, a.type AS account_type,
-              o.name AS other_account_name, o.type AS other_account_type
+              a.currency_code AS account_currency_code,
+              o.name AS other_account_name, o.type AS other_account_type,
+              o.currency_code AS other_currency_code,
+              (SELECT t2.amount FROM transactions t2
+                WHERE t.pair_id IS NOT NULL AND t2.pair_id=t.pair_id AND t2.id!=t.id LIMIT 1) AS other_amount
        ${where}
        ORDER BY t.date DESC, t.rowid DESC LIMIT ? OFFSET ?`
     )
     .all(...args, limit, offset);
-  res.json({ total, transactions: rows.map(transformTx) });
+  res.json({ total, transactions: rows.map((row) => transformTx(row, row.account_currency_code)) });
 });
 
-// 快速修改单笔交易的分类（不重建行，用于全局交易列表的行内改分类）
 api.patch("/transactions/:id/category", (req, res) => {
-  const existing = db.prepare("SELECT * FROM transactions WHERE id=?").get(req.params.id);
-  if (!existing) return bad(res, "not found");
-  if (existing.is_start) return bad(res, "cannot categorize starting balance");
-  let categoryId = req.body?.categoryId || null;
-  if (categoryId && !db.prepare("SELECT 1 FROM categories WHERE id=?").get(categoryId)) return bad(res, "unknown category");
-  if (categoryId && existing.amount < 0 && isIncomeCategory(categoryId)) return bad(res, "income category requires positive amount");
-  db.prepare("UPDATE transactions SET category_id=? WHERE id=?").run(categoryId, existing.id);
-  res.json({ ok: true });
-});
-
-// 批量设置/清除分类，返回实际修改的行数（跳过期初余额行）
-api.post("/transactions/bulk-category", (req, res) => {
-  const ids = req.body?.ids;
-  const categoryId = req.body?.categoryId || null;
-  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) return bad(res, "ids required");
-  if (categoryId && !db.prepare("SELECT 1 FROM categories WHERE id=?").get(categoryId)) return bad(res, "unknown category");
-  if (categoryId && isIncomeCategory(categoryId)) {
-    for (const id of ids) {
-      const r = db.prepare("SELECT amount,is_start FROM transactions WHERE id=?").get(id);
-      if (r && !r.is_start && r.amount < 0) return bad(res, "income category requires positive amount");
-    }
+  try {
+    setTransactionCategory(db, req.params.id, req.body?.categoryId || null);
+    res.json({ ok: true });
+  } catch (e) {
+    return sendLedgerError(res, e);
   }
-  let changed = 0;
-  const setStmt = db.prepare(
-    "UPDATE transactions SET category_id=? WHERE id=? AND is_start=0 AND category_id IS NOT ?"
-  );
-  const run = db.transaction(() => {
-    for (const id of ids) changed += setStmt.run(categoryId, id, categoryId).changes;
-  });
-  run();
-  res.json({ ok: true, changed });
 });
 
-// 批量删除交易，转账对腿一并删除；期初余额行与不存在的 id 跳过
+api.post("/transactions/bulk-category", (req, res) => {
+  try {
+    const result = setTransactionsCategory(db, req.body?.ids, req.body?.categoryId || null);
+    res.json(result);
+  } catch (e) {
+    return sendLedgerError(res, e);
+  }
+});
+
 api.post("/transactions/bulk-delete", (req, res) => {
-  const ids = req.body?.ids;
-  if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) return bad(res, "ids required");
-  let changed = 0;
-  const run = db.transaction(() => {
-    for (const id of ids) {
-      const existing = db.prepare("SELECT * FROM transactions WHERE id=?").get(id);
-      if (!existing || existing.is_start) continue;
-      deletePair(existing);
-      changed++;
-    }
-  });
-  run();
-  res.json({ ok: true, changed });
+  try {
+    const result = deleteTransactions(db, req.body?.ids);
+    res.json(result);
+  } catch (e) {
+    return sendLedgerError(res, e);
+  }
 });
 
 api.post("/transactions", (req, res) => {
   const body = req.body || {};
   try {
-    createTx(body);
+    const transfer = transferInputFromHttp(body);
+    if (transfer) postTransfer(db, transfer);
+    else postTransaction(db, body);
     res.json({ ok: true });
   } catch (e) {
-    bad(res, e.message);
+    return sendLedgerError(res, e);
   }
 });
 
-function createTx(body, opts = {}) {
-  const accountId = body.accountId;
-  const date = String(body.date || "").slice(0, 10);
-  if (!accountId || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("invalid account or date");
-  const amount = Math.round(Number(body.amount));
-  if (!Number.isFinite(amount) || amount === 0) throw new Error("amount required");
-  const acc = db.prepare("SELECT * FROM accounts WHERE id=?").get(accountId);
-  if (!acc) throw new Error("account not found");
-  const transferAccountId = body.transferAccountId && body.transferAccountId !== accountId ? body.transferAccountId : null;
-  let categoryId = body.categoryId || null;
-  const pairId = opts.keepPair || (transferAccountId ? uid() : null);
-  const cleared = body.cleared ? 1 : 0;
-  const payeeName = (body.payeeName || "").trim();
-
-  if (transferAccountId) {
-    const other = db.prepare("SELECT * FROM accounts WHERE id=?").get(transferAccountId);
-    if (!other) throw new Error("transfer target not found");
-    if (acc.on_budget && other.on_budget) categoryId = null;
-    else if (!acc.on_budget && !other.on_budget) categoryId = null;
-    else if (!acc.on_budget && other.on_budget) {
-      insertLeg({ id: opts.keepId, account: other, amount, date, payeeName, categoryId, memo: body.memo, transferAccountId: acc.id, cleared, pairId });
-      insertLeg({ account: acc, amount: -amount, date, payeeName: "", categoryId: null, memo: body.memo, transferAccountId: other.id, cleared, pairId });
-      return;
-    }
-    insertLeg({ id: opts.keepId, account: acc, amount, date, payeeName, categoryId, memo: body.memo, transferAccountId: other.id, cleared, pairId });
-    insertLeg({ account: other, amount: -amount, date, payeeName: "", categoryId: null, memo: body.memo, transferAccountId: acc.id, cleared, pairId });
-    return;
+api.post("/transfers", (req, res) => {
+  try {
+    const posted = postTransfer(db, req.body || {});
+    res.json({ ok: true, ...posted });
+  } catch (e) {
+    return sendLedgerError(res, e);
   }
-
-  insertLeg({ id: opts.keepId, account: acc, amount, date, payeeName, categoryId, memo: body.memo, transferAccountId: null, cleared, pairId: null });
-}
-
-function insertLeg({ id, account, amount, date, payeeName, categoryId, memo, transferAccountId, cleared, pairId }) {
-  if (categoryId && !db.prepare("SELECT 1 FROM categories WHERE id=?").get(categoryId)) categoryId = null;
-  if (categoryId && amount < 0 && isIncomeCategory(categoryId)) throw new Error("income category requires positive amount");
-  db.prepare(
-    `INSERT INTO transactions(id,account_id,date,payee_name,transfer_account_id,category_id,memo,amount,cleared,reconciled,is_start,pair_id,created_at)
-     VALUES(?,?,?,?,?,?,?,?,?,0,0,?,?)`
-  ).run(id || uid(), account.id, date, payeeName, transferAccountId, categoryId, memo || "", amount, cleared, pairId, nowIso());
-}
+});
 
 api.put("/transactions/:id", (req, res) => {
-  const existing = db.prepare("SELECT * FROM transactions WHERE id=?").get(req.params.id);
-  if (!existing) return bad(res, "not found");
-  if (existing.is_start) return bad(res, "cannot edit starting balance");
-  const keepId = existing.id;
-  const keepPair = existing.pair_id;
   try {
-    const tx = db.transaction(() => {
-      deletePair(existing);
-      createTx({ ...req.body, cleared: req.body.cleared ?? !!existing.cleared }, { keepId, keepPair });
-    });
-    tx();
+    updateTransaction(db, req.params.id, req.body || {});
+    res.json({ ok: true });
   } catch (e) {
-    return bad(res, e.message);
+    return sendLedgerError(res, e);
   }
-  res.json({ ok: true });
 });
 
-function deletePair(t) {
-  db.prepare("DELETE FROM transactions WHERE id=?").run(t.id);
-  if (t.pair_id) {
-    db.prepare("DELETE FROM transactions WHERE pair_id=? AND id!=?").run(t.pair_id, t.id);
-  } else if (t.transfer_account_id) {
-    // 历史数据（如演示数据）的转账没有 pair_id：按 对侧账户+日期+反向金额 找到另一条腿一起删，
-    // 否则会留下孤儿腿导致对方余额重复计算。
-    db.prepare(
-      `DELETE FROM transactions WHERE id IN (
-         SELECT id FROM transactions
-          WHERE account_id = ? AND transfer_account_id = ? AND date = ? AND amount = ? AND is_start = 0
-          LIMIT 1)`
-    ).run(t.transfer_account_id, t.account_id, t.date, -t.amount);
-  }
-}
-
 api.delete("/transactions/:id", (req, res) => {
-  const existing = db.prepare("SELECT * FROM transactions WHERE id=?").get(req.params.id);
-  if (!existing) return bad(res, "not found");
-  if (existing.is_start) return bad(res, "cannot delete starting balance");
-  const tx = db.transaction(() => deletePair(existing));
-  tx();
-  res.json({ ok: true });
+  try {
+    deleteTransaction(db, req.params.id);
+    res.json({ ok: true });
+  } catch (e) {
+    return sendLedgerError(res, e);
+  }
 });
 
 api.patch("/transactions/:id/cleared", (req, res) => {
-  const v = Number(req.body?.cleared);
-  if (![0, 1].includes(v)) return bad(res, "invalid value");
-  const existing = db.prepare("SELECT * FROM transactions WHERE id=?").get(req.params.id);
-  if (!existing) return bad(res, "not found");
-  db.prepare("UPDATE transactions SET cleared=?, reconciled=? WHERE id=?").run(v, v === 1 ? 0 : existing.reconciled, existing.id);
-  if (existing.pair_id) {
-    db.prepare("UPDATE transactions SET cleared=?, reconciled=? WHERE pair_id=? AND id!=?").run(v, v === 1 ? 0 : existing.reconciled, existing.pair_id, existing.id);
+  try {
+    const v = Number(req.body?.cleared);
+    setTransactionCleared(db, req.params.id, v);
+    res.json({ ok: true });
+  } catch (e) {
+    return sendLedgerError(res, e);
   }
-  res.json({ ok: true });
 });
 
 // 对账完成：以银行/现实的「实际余额」与当前计算余额比对；
 // 不一致时自动创建一条差额流水兜底抹平 —— category_id 留空使其影响未分配（Ready to Assign），
 // is_reconcile_adjustment=1 使其不计入「未分类」提醒；随后把已清算流水锁定为已对账。
 api.post("/reconcile/:accountId", (req, res) => {
-  const acc = db.prepare("SELECT * FROM accounts WHERE id=?").get(req.params.accountId);
-  if (!acc) return bad(res, "not found");
-  const body = req.body || {};
-  let statement;
-  if (body.statementBalance !== undefined && body.statementBalance !== null && body.statementBalance !== "") {
-    statement = Math.round(Number(body.statementBalance));
-    if (!Number.isFinite(statement)) return bad(res, "invalid statement balance");
+  try {
+    const body = req.body || {};
+    const result = reconcileAccount(db, {
+      accountId: req.params.accountId,
+      statementBalance: body.statementBalance,
+      markCleared: body.markCleared,
+      asOfDate: todayYmd(),
+    });
+    res.json(result);
+  } catch (e) {
+    return sendLedgerError(res, e);
   }
-  const markCleared = !!body.markCleared;
-  let adjustment = null;
-  const run = db.transaction(() => {
-    if (statement !== undefined) {
-      const calc =
-        acc.starting_balance +
-        db.prepare("SELECT COALESCE(SUM(amount),0) s FROM transactions WHERE account_id=? AND is_start=0").get(acc.id).s;
-      if (statement !== calc) {
-        adjustment = statement - calc;
-        db.prepare(
-          `INSERT INTO transactions(id,account_id,date,payee_name,memo,amount,cleared,reconciled,is_start,is_reconcile_adjustment,created_at)
-           VALUES(?,?,?,?,?,?,1,1,0,1,?)`
-        ).run(uid(), acc.id, todayYmd(), "__reconciling__", "", adjustment, nowIso());
-      }
-    }
-    if (markCleared) {
-      // 只补勾非转账行：转账涉及对侧账户状态，留给用户自行确认
-      db.prepare(
-        "UPDATE transactions SET cleared=1 WHERE account_id=? AND cleared=0 AND is_start=0 AND transfer_account_id IS NULL"
-      ).run(acc.id);
-    }
-    db.prepare("UPDATE transactions SET reconciled=1 WHERE account_id=? AND cleared=1").run(acc.id);
-  });
-  run();
-  res.json({ ok: true, adjustment });
 });
 
 api.get("/categories", (req, res) => {
@@ -1210,6 +1135,11 @@ api.put("/categories/:id", (req, res) => {
 });
 
 api.delete("/categories/:id", (req, res) => {
+  try {
+    assertCategoryDeletable(db, req.params.id);
+  } catch (e) {
+    return sendLedgerError(res, e);
+  }
   const usedTx = db.prepare("SELECT COUNT(*) c FROM transactions WHERE category_id=?").get(req.params.id).c;
   const usedAs = db.prepare("SELECT COUNT(*) c FROM assignments WHERE category_id=?").get(req.params.id).c;
   if (usedTx > 0 || usedAs > 0) return bad(res, "in use");

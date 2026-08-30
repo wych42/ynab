@@ -58,6 +58,7 @@ export interface Category {
   hidden: 0 | 1;
   note: string;
   goal: Goal | null;
+  system_key?: string | null;
 }
 
 export interface CategoryGroup {
@@ -161,6 +162,8 @@ export interface Tx {
   transferAccountId: string | null;
   otherAccountName: string | null;
   otherAccountType: string | null;
+  otherAccountCurrencyCode?: string | null;
+  otherAmountMinor?: number | null;
   categoryId: string | null;
   categoryName: string | null;
   memo: string | null;
@@ -169,6 +172,9 @@ export interface Tx {
   reconciled: 0 | 1;
   balance?: number;
   account_name?: string;
+  currencyCode?: string | null;
+  originalCurrencyCode?: string | null;
+  originalAmountMinor?: number | null;
 }
 
 export interface ReportsData {

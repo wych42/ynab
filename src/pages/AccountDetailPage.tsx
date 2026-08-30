@@ -14,11 +14,12 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtDate, formatAccountMoney, parseAmountToCents, todayIso } from "../format";
+import { fmtDate, formatAccountMoney, formatMinorInput, impliedRateText, parseAmountToCents, todayIso } from "../format";
+import { parseAmountToMinor } from "../money";
 import { Btn, Modal, Spinner, Field, inputCls } from "../components/ui";
-import { AmountInput, CategorySelect, PayeeSelect, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, type FormState } from "../components/txEdit";
+import { AmountInput, CategorySelect, PayeeSelect, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, parseOptionalMinor, type FormState } from "../components/txEdit";
 import { ACCOUNT_TYPE_LABELS } from "./AccountsPage";
-import type { Tx } from "../types";
+import type { Account, Tx } from "../types";
 
 export function AccountDetailPage({ id }: { id: string }) {
   const { boot, t, lang, refreshBoot, toast } = useApp();
@@ -79,19 +80,11 @@ export function AccountDetailPage({ id }: { id: string }) {
 
   const saveNew = async () => {
     if (saveRef.current) return;
-    const amount = formAmount(form);
-    if (!amount) return;
+    const payload = buildTxPayload(id, form, currencyCode, boot?.accounts ?? []);
+    if (!payload) return;
     saveRef.current = true;
     try {
-      await api.createTx({
-        accountId: id,
-        date: form.date,
-        payeeName: form.transferAccountId ? "" : form.payeeName,
-        transferAccountId: form.transferAccountId || undefined,
-        categoryId: form.transferAccountId ? undefined : form.categoryId || undefined,
-        memo: form.memo,
-        amount,
-      });
+      await api.createTx(payload);
       setForm(emptyForm(boot?.settings.timezone));
       await Promise.all([load(), refreshBoot()]);
     } catch {
@@ -103,33 +96,15 @@ export function AccountDetailPage({ id }: { id: string }) {
 
   const startEdit = (tx: Tx) => {
     setEditingId(tx.id);
-    const inf = tx.amount > 0 ? (tx.amount / 100).toString() : "";
-    const outf = tx.amount < 0 ? (-tx.amount / 100).toString() : "";
-    setEditForm({
-      date: tx.date,
-      payeeName: tx.payeeName ?? "",
-      transferAccountId: tx.transferAccountId ?? "",
-      categoryId: tx.categoryId ?? "",
-      memo: tx.memo ?? "",
-      inflow: inf,
-      outflow: outf,
-    });
+    setEditForm(formFromTx(tx, currencyCode, boot?.accounts ?? []));
   };
 
   const saveEdit = async () => {
     if (!editingId) return;
-    const amount = formAmount(editForm);
-    if (!amount) return;
+    const payload = buildTxPayload(id, editForm, currencyCode, boot?.accounts ?? []);
+    if (!payload) return;
     try {
-      await api.updateTx(editingId, {
-        accountId: id,
-        date: editForm.date,
-        payeeName: editForm.transferAccountId ? "" : editForm.payeeName,
-        transferAccountId: editForm.transferAccountId || undefined,
-        categoryId: editForm.transferAccountId ? undefined : editForm.categoryId || undefined,
-        memo: editForm.memo,
-        amount,
-      });
+      await api.updateTx(editingId, payload);
       setEditingId(null);
       await Promise.all([load(), refreshBoot()]);
     } catch {
@@ -284,6 +259,106 @@ export function AccountDetailPage({ id }: { id: string }) {
   );
 }
 
+function minorToInput(amountMinor: number, currencyCode?: string | null): string {
+  if (!amountMinor) return "";
+  const abs = Math.abs(amountMinor);
+  if (currencyCode) return formatMinorInput(abs, currencyCode);
+  return String(abs / 100);
+}
+
+function formFromTx(tx: Tx, currencyCode: string | null | undefined, accounts: Account[]): FormState {
+  const other = accounts.find((a) => a.id === tx.transferAccountId);
+  const otherCode = tx.otherAccountCurrencyCode ?? other?.currencyCode ?? null;
+  return {
+    date: tx.date,
+    payeeName: tx.payeeName ?? "",
+    transferAccountId: tx.transferAccountId ?? "",
+    categoryId: tx.categoryId ?? "",
+    memo: tx.memo ?? "",
+    inflow: tx.amount > 0 ? minorToInput(tx.amount, currencyCode) : "",
+    outflow: tx.amount < 0 ? minorToInput(tx.amount, currencyCode) : "",
+    otherAmount:
+      tx.transferAccountId && otherCode && tx.otherAmountMinor != null ? minorToInput(tx.otherAmountMinor, otherCode) : "",
+    originalCurrencyCode: tx.originalCurrencyCode ?? "",
+    originalAmount:
+      tx.originalCurrencyCode && tx.originalAmountMinor != null
+        ? minorToInput(tx.originalAmountMinor, tx.originalCurrencyCode)
+        : "",
+  };
+}
+
+function buildTxPayload(
+  accountId: string,
+  form: FormState,
+  currencyCode: string | null | undefined,
+  accounts: Account[],
+): Record<string, unknown> | null {
+  const amount = formAmount(form, currencyCode);
+  if (!amount) return null;
+  const other = accounts.find((a) => a.id === form.transferAccountId);
+  const cross = !!(currencyCode && other?.currencyCode && other.currencyCode !== currencyCode);
+  const payload: Record<string, unknown> = {
+    accountId,
+    date: form.date,
+    payeeName: form.transferAccountId ? "" : form.payeeName,
+    transferAccountId: form.transferAccountId || undefined,
+    categoryId: form.transferAccountId ? undefined : form.categoryId || undefined,
+    memo: form.memo,
+    amount,
+  };
+  if (cross && other?.currencyCode) {
+    const otherMinor = parseOptionalMinor(form.otherAmount, other.currencyCode);
+    if (otherMinor == null || otherMinor <= 0) return null;
+    if (amount < 0) payload.toAmountMinor = otherMinor;
+    else payload.fromAmountMinor = otherMinor;
+  }
+  if (!form.transferAccountId && form.originalCurrencyCode && form.originalAmount.trim()) {
+    const originalMinor = parseOptionalMinor(form.originalAmount, form.originalCurrencyCode);
+    if (originalMinor == null) return null;
+    payload.originalCurrencyCode = form.originalCurrencyCode;
+    payload.originalAmountMinor = originalMinor;
+  }
+  return payload;
+}
+
+function AmountCell({
+  amount,
+  currencyCode,
+  originalCurrencyCode,
+  originalAmountMinor,
+  otherAccountCurrencyCode,
+  otherAmountMinor,
+  lang,
+  tone,
+}: {
+  amount: number;
+  currencyCode?: string | null;
+  originalCurrencyCode?: string | null;
+  originalAmountMinor?: number | null;
+  otherAccountCurrencyCode?: string | null;
+  otherAmountMinor?: number | null;
+  lang: "zh" | "en";
+  tone: "out" | "in";
+}) {
+  const show = tone === "out" ? amount < 0 : amount > 0;
+  if (!show) return <span className={`num px-2 text-right text-[13px] ${tone === "out" ? "text-rose-500" : "text-emerald-600"}`} />;
+  return (
+    <span className={`num px-2 text-right text-[13px] ${tone === "out" ? "text-rose-500" : "text-emerald-600"}`}>
+      <span className="block">{formatAccountMoney(Math.abs(amount), currencyCode, lang)}</span>
+      {originalCurrencyCode && originalAmountMinor != null && (
+        <span className="block text-[11px] font-normal text-slate-400">
+          {formatAccountMoney(originalAmountMinor, originalCurrencyCode, lang)}
+        </span>
+      )}
+      {otherAccountCurrencyCode && otherAmountMinor != null && otherAccountCurrencyCode !== currencyCode && (
+        <span className="block text-[11px] font-normal text-slate-400">
+          {formatAccountMoney(Math.abs(otherAmountMinor), otherAccountCurrencyCode, lang)}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /* ------------------------- Reconcile ------------------------- */
 
 function ReconcileModal({
@@ -302,10 +377,21 @@ function ReconcileModal({
   onDone: () => Promise<void>;
 }) {
   const { t, toast, lang } = useApp();
-  const [v, setV] = useState((balance / 100).toFixed(2));
+  const [v, setV] = useState(() =>
+    currencyCode ? formatMinorInput(balance, currencyCode) : (balance / 100).toFixed(2)
+  );
   const [markCleared, setMarkCleared] = useState(true);
   const [busy, setBusy] = useState(false);
-  const cents = parseAmountToCents(v);
+  let cents: number | null = null;
+  if (currencyCode) {
+    try {
+      cents = parseAmountToMinor(v, currencyCode);
+    } catch {
+      cents = null;
+    }
+  } else {
+    cents = parseAmountToCents(v);
+  }
   const diff = cents === null ? null : cents - balance;
 
   const submit = async () => {
@@ -406,43 +492,102 @@ function TxFormRow({
   const groups = boot?.groups ?? [];
   const incomeIds = incomeCategoryIds(groups);
   const defaultIncomeId = defaultIncomeCategory(groups);
+  const current = boot?.accounts.find((a) => a.id === excludeAccountId);
+  const other = boot?.accounts.find((a) => a.id === form.transferAccountId);
+  const cross = !!(current?.currencyCode && other?.currencyCode && current.currencyCode !== other.currencyCode);
+  const currentCode = current?.currencyCode ?? null;
+  const booked = currentCode ? formAmount(form, currentCode) : formAmount(form);
+  const otherMinor =
+    cross && other?.currencyCode ? parseOptionalMinor(form.otherAmount, other.currencyCode) : null;
+  const rate =
+    booked && otherMinor && currentCode && other?.currencyCode
+      ? impliedRateText(Math.abs(booked), currentCode, otherMinor, other.currencyCode)
+      : null;
   return (
-    <div className={`${gridCls} px-3 py-2`} onKeyDown={(e) => e.key === "Enter" && onSave()}>
-      <div />
-      <input
-        type="date"
-        className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none focus:border-brand-400 focus:bg-white"
-        value={form.date}
-        onChange={(e) => setForm({ ...form, date: e.target.value })}
-      />
-      <PayeeSelect
-        value={form.transferAccountId ? "" : form.payeeName}
-        transferValue={form.transferAccountId}
-        excludeAccountId={excludeAccountId}
-        onChange={(patch) => setForm({ ...form, ...patch })}
-      />
-      <CategorySelect value={form.categoryId} disabled={!!form.transferAccountId} onChange={(v) => setForm({ ...form, categoryId: v })} />
-      <input
-        className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none placeholder:text-slate-300 focus:border-brand-400 focus:bg-white"
-        placeholder={t("tx_memo")}
-        value={form.memo}
-        onChange={(e) => setForm({ ...form, memo: e.target.value })}
-      />
-      <AmountInput
-        value={form.outflow}
-        onChange={(v) => setForm({ ...form, outflow: v, inflow: "", categoryId: incomeIds.has(form.categoryId) ? "" : form.categoryId })}
-        placeholder={t("tx_outflow")}
-      />
-      <AmountInput
-        value={form.inflow}
-        onChange={(v) => setForm({ ...form, inflow: v, outflow: "", categoryId: form.categoryId || defaultIncomeId })}
-        placeholder={t("tx_inflow")}
-      />
-      <div className="flex justify-end pr-1">
-        <Btn variant="primary" onClick={onSave}>
-          <Check size={14} />
-        </Btn>
+    <div onKeyDown={(e) => e.key === "Enter" && onSave()}>
+      <div className={`${gridCls} px-3 py-2`}>
+        <div />
+        <input
+          type="date"
+          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none focus:border-brand-400 focus:bg-white"
+          value={form.date}
+          onChange={(e) => setForm({ ...form, date: e.target.value })}
+        />
+        <PayeeSelect
+          value={form.transferAccountId ? "" : form.payeeName}
+          transferValue={form.transferAccountId}
+          excludeAccountId={excludeAccountId}
+          onChange={(patch) => setForm({ ...form, ...patch, otherAmount: patch.transferAccountId ? form.otherAmount : "" })}
+        />
+        <CategorySelect value={form.categoryId} disabled={!!form.transferAccountId} onChange={(v) => setForm({ ...form, categoryId: v })} />
+        <input
+          className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none placeholder:text-slate-300 focus:border-brand-400 focus:bg-white"
+          placeholder={t("tx_memo")}
+          value={form.memo}
+          onChange={(e) => setForm({ ...form, memo: e.target.value })}
+        />
+        <AmountInput
+          value={form.outflow}
+          onChange={(v) => setForm({ ...form, outflow: v, inflow: "", categoryId: incomeIds.has(form.categoryId) ? "" : form.categoryId })}
+          placeholder={t("tx_outflow")}
+        />
+        <AmountInput
+          value={form.inflow}
+          onChange={(v) => setForm({ ...form, inflow: v, outflow: "", categoryId: form.categoryId || defaultIncomeId })}
+          placeholder={t("tx_inflow")}
+        />
+        <div className="flex justify-end pr-1">
+          <Btn variant="primary" onClick={onSave}>
+            <Check size={14} />
+          </Btn>
+        </div>
       </div>
+      {cross && other?.currencyCode && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-brand-100 px-4 py-2 text-[12px]">
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">
+              {(booked ?? 0) >= 0 ? t("tx_sourceAmount", { code: other.currencyCode }) : t("tx_destAmount", { code: other.currencyCode })}
+            </span>
+            <input
+              aria-label={t("tx_destAmount")}
+              className="w-36 rounded-md border border-brand-200 bg-white px-2 py-1 text-right num outline-none"
+              value={form.otherAmount}
+              onChange={(e) => setForm({ ...form, otherAmount: e.target.value })}
+            />
+          </label>
+          {rate && <span className="text-slate-500">{t("tx_impliedRate", { rate })}</span>}
+        </div>
+      )}
+      {!form.transferAccountId && (
+        <div className="flex flex-wrap items-center gap-3 border-t border-brand-100 px-4 py-2 text-[12px]">
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">{t("tx_originalCurrency")}</span>
+            <select
+              aria-label={t("tx_originalCurrency")}
+              className="rounded-md border border-slate-200 bg-white px-2 py-1"
+              value={form.originalCurrencyCode}
+              onChange={(e) => setForm({ ...form, originalCurrencyCode: e.target.value })}
+            >
+              <option value="">{t("tx_originalNone")}</option>
+              {(boot?.supportedCurrencies ?? []).map((currency) => (
+                <option key={currency.code} value={currency.code}>
+                  {currency.code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-slate-500">{t("tx_originalAmount")}</span>
+            <input
+              aria-label={t("tx_originalAmount")}
+              className="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-right num outline-none"
+              value={form.originalAmount}
+              onChange={(e) => setForm({ ...form, originalAmount: e.target.value })}
+              disabled={!form.originalCurrencyCode}
+            />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -563,8 +708,26 @@ function TxTable({
               {tx.categoryName ?? (tx.transferAccountId ? "" : <span className="italic text-slate-300">{t("tx_uncategorized")}</span>)}
             </span>
             <span className="truncate px-2 text-[12px] text-slate-400">{tx.memo}</span>
-            <span className="num px-2 text-right text-[13px] text-rose-500">{tx.amount < 0 ? formatAccountMoney(-tx.amount, currencyCode, lang) : ""}</span>
-            <span className="num px-2 text-right text-[13px] text-emerald-600">{tx.amount > 0 ? formatAccountMoney(tx.amount, currencyCode, lang) : ""}</span>
+            <AmountCell
+              amount={tx.amount}
+              currencyCode={currencyCode}
+              originalCurrencyCode={tx.originalCurrencyCode}
+              originalAmountMinor={tx.originalAmountMinor}
+              otherAccountCurrencyCode={tx.otherAccountCurrencyCode}
+              otherAmountMinor={tx.otherAmountMinor}
+              lang={lang}
+              tone="out"
+            />
+            <AmountCell
+              amount={tx.amount}
+              currencyCode={currencyCode}
+              originalCurrencyCode={tx.originalCurrencyCode}
+              originalAmountMinor={tx.originalAmountMinor}
+              otherAccountCurrencyCode={tx.otherAccountCurrencyCode}
+              otherAmountMinor={tx.otherAmountMinor}
+              lang={lang}
+              tone="in"
+            />
             <div className="relative flex items-center justify-end gap-2 px-2">
               <span className={`num text-[13px] ${tx.balance !== undefined && tx.balance < 0 ? "text-rose-500" : "text-slate-400"}`}>
                 {tx.balance !== undefined ? formatAccountMoney(tx.balance, currencyCode, lang) : ""}

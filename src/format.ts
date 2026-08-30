@@ -81,6 +81,23 @@ export function formatMinorInput(amountMinor: number, currencyCode: string): str
   return `${sign}${whole}.${frac}`;
 }
 
+export function impliedRateText(
+  fromMinor: number,
+  fromCode: string,
+  toMinor: number,
+  toCode: string,
+): string | null {
+  if (!fromMinor || !toMinor || !fromCode || !toCode) return null;
+  const fromExp = getExponent(fromCode);
+  const toExp = getExponent(toCode);
+  const fromMajor = Math.abs(fromMinor) / 10 ** fromExp;
+  const toMajor = Math.abs(toMinor) / 10 ** toExp;
+  if (fromMajor === 0) return null;
+  const rate = toMajor / fromMajor;
+  const rendered = Number.isInteger(rate) ? String(rate) : String(Number(rate.toPrecision(8)));
+  return `${rendered} ${toCode}/${fromCode}`;
+}
+
 export function fmtMonth(ym: string, lang: Lang): string {
   const [y, m] = ym.split("-").map(Number);
   return new Intl.DateTimeFormat(lang === "zh" ? "zh-CN" : "en-US", {

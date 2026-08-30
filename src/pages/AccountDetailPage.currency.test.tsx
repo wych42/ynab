@@ -14,12 +14,37 @@ const SUPPORTED: CurrencyRecord[] = [
   { code: "JPY", exponent: 0, enabledByDefault: true },
 ];
 
+function baseAccount(
+  id: string,
+  name: string,
+  currencyCode: string,
+  extra: Partial<Account> = {},
+): Account & { balance: number } {
+  return {
+    id,
+    name,
+    type: "cash",
+    on_budget: 1,
+    closed: 0,
+    starting_balance: extra.starting_balance ?? 0,
+    starting_balance_date: "2026-08-01",
+    sort_order: 0,
+    created_at: "2026-08-01T00:00:00.000Z",
+    balance: extra.balance ?? extra.starting_balance ?? 0,
+    currencyCode,
+    ...extra,
+  };
+}
+
 const h = vi.hoisted(() => ({
   accountRegister: vi.fn(),
   updateAccount: vi.fn(),
+  createTx: vi.fn(),
+  reconcile: vi.fn(),
   refreshBoot: vi.fn(),
   toast: vi.fn(),
   account: null as (Account & { balance: number }) | null,
+  extraAccounts: [] as Account[],
   transactions: [] as Tx[],
 }));
 
@@ -33,6 +58,8 @@ vi.mock("../api", () => {
     api: {
       accountRegister: (...args: unknown[]) => h.accountRegister(...args),
       updateAccount: (...args: unknown[]) => h.updateAccount(...args),
+      createTx: (...args: unknown[]) => h.createTx(...args),
+      reconcile: (...args: unknown[]) => h.reconcile(...args),
     },
   };
 });
@@ -41,7 +68,7 @@ vi.mock("../store", () => ({
   useApp: () => ({
     boot: {
       settings: { currencySymbol: "¥", language: "zh", reportingCurrency: "CNY", timezone: "UTC" },
-      accounts: h.account ? [h.account] : [],
+      accounts: [h.account, ...h.extraAccounts].filter(Boolean),
       payees: [],
       groups: [],
       currentMonth: "2026-08",
@@ -59,26 +86,21 @@ import { AccountDetailPage } from "./AccountDetailPage";
 import { ApiError } from "../api";
 
 function jpyAccount(balance: number): Account & { balance: number } {
-  return {
-    id: "acc-jpy",
-    name: "日元现金",
-    type: "cash",
-    on_budget: 1,
-    closed: 0,
-    starting_balance: balance,
-    starting_balance_date: "2026-08-01",
-    sort_order: 0,
-    created_at: "2026-08-01T00:00:00.000Z",
-    balance,
-    currencyCode: "JPY",
-  };
+  return baseAccount("acc-jpy", "日元现金", "JPY", { starting_balance: balance, balance });
 }
 
 beforeEach(() => {
   h.updateAccount.mockReset().mockResolvedValue({});
+  h.createTx.mockReset().mockResolvedValue({ ok: true });
+  h.reconcile.mockReset().mockResolvedValue({ ok: true, adjustment: null });
   h.refreshBoot.mockReset().mockResolvedValue({});
   h.toast.mockReset();
   h.account = jpyAccount(0);
+  h.extraAccounts = [
+    baseAccount("acc-cny", "家庭 CNY", "CNY"),
+    baseAccount("acc-sgd", "SGD 日常", "SGD", { type: "checking" }),
+    baseAccount("acc-usd", "USD 信用卡", "USD", { type: "creditCard" }),
+  ];
   h.transactions = [];
   h.accountRegister.mockReset().mockImplementation(async () => ({
     account: h.account,
@@ -135,5 +157,126 @@ describe("AccountDetailPage 按账户币种格式化并允许修改空账户币�
     render(<AccountDetailPage id="acc-jpy" />);
     fireEvent.change(await screen.findByLabelText("account_currency"), { target: { value: "USD" } });
     await waitFor(() => expect(h.toast).toHaveBeenCalledWith("account_currencyLocked", "err"));
+  });
+});
+
+describe("AccountDetailPage 跨币种转账、原始金额与 JPY 精度", () => {
+  async function chooseTransfer(name: string) {
+    const payee = await screen.findByLabelText("tx_payee");
+    fireEvent.focus(payee);
+    const option = await screen.findByRole("button", { name });
+    fireEvent.mouseDown(option);
+  }
+
+  it("requires and submits the destination amount when the other account uses another currency", async () => {
+    h.account = baseAccount("acc-sgd", "SGD 日常", "SGD", { type: "checking", starting_balance: 500000, balance: 500000 });
+    render(<AccountDetailPage id="acc-sgd" />);
+    await chooseTransfer("家庭 CNY");
+    const dest = await screen.findByLabelText("tx_destAmount");
+    fireEvent.change(screen.getByPlaceholderText("tx_outflow"), { target: { value: "100.00" } });
+    fireEvent.change(dest, { target: { value: "550.00" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() =>
+      expect(h.createTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "acc-sgd",
+          transferAccountId: "acc-cny",
+          amount: -10000,
+          toAmountMinor: 55000,
+        })
+      )
+    );
+  });
+
+  it("omits destination amount for a same-currency transfer", async () => {
+    h.account = baseAccount("acc-cny-src", "CNY 日常", "CNY", { type: "checking" });
+    h.extraAccounts = [baseAccount("acc-cny", "家庭 CNY", "CNY")];
+    render(<AccountDetailPage id="acc-cny-src" />);
+    await chooseTransfer("家庭 CNY");
+    expect(screen.queryByLabelText("tx_destAmount")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("tx_outflow"), { target: { value: "22.00" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() =>
+      expect(h.createTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "acc-cny-src",
+          transferAccountId: "acc-cny",
+          amount: -2200,
+        })
+      )
+    );
+    expect(h.createTx.mock.calls[0][0].toAmountMinor).toBeUndefined();
+  });
+
+  it("submits original EUR 20.00 with a USD booked amount of -22.00", async () => {
+    h.account = baseAccount("acc-usd", "USD 信用卡", "USD", { type: "creditCard" });
+    h.transactions = [
+      {
+        id: "tx-usd",
+        accountId: "acc-usd",
+        date: "2026-08-20",
+        payeeName: "Paris cafe",
+        isStart: false,
+        transferAccountId: null,
+        otherAccountName: null,
+        otherAccountType: null,
+        categoryId: null,
+        categoryName: null,
+        memo: "",
+        amount: -2200,
+        cleared: 1,
+        reconciled: 0,
+        balance: -2200,
+        currencyCode: "USD",
+        originalCurrencyCode: "EUR",
+        originalAmountMinor: 2000,
+      },
+    ];
+    render(<AccountDetailPage id="acc-usd" />);
+    expect(await screen.findByText(formatMoney(2200, "USD", { locale: "zh-CN" }))).toBeTruthy();
+    expect(screen.getByText(formatMoney(2000, "EUR", { locale: "zh-CN" }))).toBeTruthy();
+
+    fireEvent.change(screen.getByPlaceholderText("tx_outflow"), { target: { value: "22.00" } });
+    fireEvent.change(screen.getByLabelText("tx_originalCurrency"), { target: { value: "EUR" } });
+    fireEvent.change(screen.getByLabelText("tx_originalAmount"), { target: { value: "20.00" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() =>
+      expect(h.createTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "acc-usd",
+          amount: -2200,
+          originalCurrencyCode: "EUR",
+          originalAmountMinor: 2000,
+        })
+      )
+    );
+  });
+
+  it("submits JPY outflow as whole yen without inventing decimal places", async () => {
+    h.account = jpyAccount(1234);
+    render(<AccountDetailPage id="acc-jpy" />);
+    fireEvent.change(await screen.findByPlaceholderText("tx_outflow"), { target: { value: "234" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() =>
+      expect(h.createTx).toHaveBeenCalledWith(
+        expect.objectContaining({
+          accountId: "acc-jpy",
+          amount: -234,
+        })
+      )
+    );
+  });
+
+  it("uses whole-yen precision in the reconcile field", async () => {
+    h.account = jpyAccount(1234);
+    render(<AccountDetailPage id="acc-jpy" />);
+    fireEvent.click(await screen.findByText("account_reconcile"));
+    const input = (await screen.findByLabelText("rec_statement")) as HTMLInputElement;
+    expect(input.value).toBe("1234");
+    fireEvent.change(input, { target: { value: "1500" } });
+    fireEvent.click(screen.getByText("common_confirm"));
+    await waitFor(() =>
+      expect(h.reconcile).toHaveBeenCalledWith("acc-jpy", { statementBalance: 1500, markCleared: true })
+    );
   });
 });

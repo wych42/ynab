@@ -61,8 +61,11 @@ export function computeBudget(uptoMonth, currencyCode) {
   const months = listMonths(uptoMonth, code);
   const txRows = db
     .prepare(
-      `SELECT t.*, a.on_budget AS ob, a.type AS atype
-       FROM transactions t JOIN accounts a ON a.id = t.account_id
+      `SELECT t.*, a.on_budget AS ob, a.type AS atype,
+              o.currency_code AS other_currency, o.on_budget AS other_on_budget
+       FROM transactions t
+       JOIN accounts a ON a.id = t.account_id
+       LEFT JOIN accounts o ON o.id = t.transfer_account_id
        WHERE a.currency_code=?`
     )
     .all(code);
@@ -114,6 +117,22 @@ export function computeBudget(uptoMonth, currencyCode) {
     const ids = catIds();
     for (const id of ids) activity.set(id, 0);
 
+    const applyTransfer = (t) => {
+      const sameCurrencyOnBudget = t.other_currency === code && !!t.other_on_budget;
+      if (sameCurrencyOnBudget && !t.category_id) return;
+      if (t.category_id == null) {
+        if (t.amount > 0) inflow += t.amount;
+        else uncatOutflow += -t.amount;
+        return;
+      }
+      if (incomeCats.has(t.category_id)) {
+        inflow += t.amount;
+        activity.set(t.category_id, (activity.get(t.category_id) || 0) + t.amount);
+        return;
+      }
+      activity.set(t.category_id, (activity.get(t.category_id) || 0) + t.amount);
+    };
+
     for (const t of monthTx) {
       if (t.is_start) {
         // 期初余额：预算内账户的初始资金计入可分配资金（正增负减）
@@ -125,13 +144,17 @@ export function computeBudget(uptoMonth, currencyCode) {
       if (isCC) {
         if (t.transfer_account_id) {
           if (t.amount > 0) activity.set(ccp, (activity.get(ccp) || 0) - t.amount);
+          applyTransfer(t);
         } else if (t.category_id) {
           activity.set(t.category_id, (activity.get(t.category_id) || 0) + t.amount);
           activity.set(ccp, (activity.get(ccp) || 0) - t.amount);
         }
         continue;
       }
-      if (t.transfer_account_id) continue;
+      if (t.transfer_account_id) {
+        applyTransfer(t);
+        continue;
+      }
       if (t.category_id == null) {
         if (t.amount > 0) inflow += t.amount;
         else uncatOutflow += -t.amount;

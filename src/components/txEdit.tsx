@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { useApp } from "../store";
 import { parseAmountToCents, todayIso } from "../format";
+import { parseAmountToMinor } from "../money";
 import type { CategoryGroup } from "../types";
 
 export interface FormState {
@@ -12,6 +13,9 @@ export interface FormState {
   memo: string;
   inflow: string;
   outflow: string;
+  otherAmount: string;
+  originalCurrencyCode: string;
+  originalAmount: string;
 }
 
 export const emptyForm = (timeZone?: string): FormState => ({
@@ -22,13 +26,38 @@ export const emptyForm = (timeZone?: string): FormState => ({
   memo: "",
   inflow: "",
   outflow: "",
+  otherAmount: "",
+  originalCurrencyCode: "",
+  originalAmount: "",
 });
 
-export function formAmount(f: FormState): number | null {
-  const inf = parseAmountToCents(f.inflow) ?? 0;
-  const outf = parseAmountToCents(f.outflow) ?? 0;
+function parseFormMinor(raw: string, currencyCode?: string | null): number | null {
+  if (!raw.trim()) return 0;
+  if (currencyCode) {
+    try {
+      return parseAmountToMinor(raw, currencyCode);
+    } catch {
+      return null;
+    }
+  }
+  return parseAmountToCents(raw);
+}
+
+export function formAmount(f: FormState, currencyCode?: string | null): number | null {
+  const inf = parseFormMinor(f.inflow, currencyCode);
+  const outf = parseFormMinor(f.outflow, currencyCode);
+  if (inf === null || outf === null) return null;
   const v = inf - outf;
   return v === 0 ? null : v;
+}
+
+export function parseOptionalMinor(raw: string, currencyCode: string): number | null {
+  if (!raw.trim()) return null;
+  try {
+    return parseAmountToMinor(raw, currencyCode);
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------- Payee selector ------------------------- */
@@ -44,7 +73,7 @@ export function PayeeSelect({
   onChange: (patch: { payeeName?: string; transferAccountId?: string }) => void;
   excludeAccountId?: string;
 }) {
-  const { boot } = useApp();
+  const { boot, t } = useApp();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +98,7 @@ export function PayeeSelect({
     <div ref={wrapRef} className="relative">
       <input
         ref={inputRef}
+        aria-label={t("tx_payee")}
         className="w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none transition-colors placeholder:text-slate-300 focus:border-brand-400 focus:bg-white focus:ring-2 focus:ring-brand-100"
         placeholder={selectedTransfer ? `→ ${selectedTransfer.name}` : ""}
         value={value}

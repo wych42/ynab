@@ -13,9 +13,9 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtDate, fmtMoney } from "../format";
+import { fmtDate, formatAccountMoney, formatMinorInput } from "../format";
 import { Btn, Spinner } from "../components/ui";
-import { AmountInput, CategorySelect, PayeeSelect, emptyForm, formAmount, type FormState } from "../components/txEdit";
+import { AmountInput, CategorySelect, PayeeSelect, emptyForm, formAmount, parseOptionalMinor, type FormState } from "../components/txEdit";
 import type { Tx } from "../types";
 
 const PAGE_SIZE = 200;
@@ -90,6 +90,10 @@ export function TransactionsPage() {
     return tx.account_name ?? boot?.accounts.find((a) => a.id === tx.accountId)?.name ?? "";
   }
 
+  function txCurrency(tx: Tx): string | null {
+    return tx.currencyCode ?? boot?.accounts.find((a) => a.id === tx.accountId)?.currencyCode ?? null;
+  }
+
   async function deleteTx(id: string) {
     if (!confirm(t("confirm_deleteTx"))) return;
     try {
@@ -161,32 +165,59 @@ export function TransactionsPage() {
 
   const startEdit = (tx: Tx) => {
     setEditingId(tx.id);
+    const code = txCurrency(tx);
+    const other = boot?.accounts.find((a) => a.id === tx.transferAccountId);
+    const otherCode = tx.otherAccountCurrencyCode ?? other?.currencyCode ?? null;
     setEditForm({
       date: tx.date,
       payeeName: tx.transferAccountId ? "" : tx.payeeName ?? "",
       transferAccountId: tx.transferAccountId ?? "",
       categoryId: tx.categoryId ?? "",
       memo: tx.memo ?? "",
-      inflow: tx.amount > 0 ? (tx.amount / 100).toString() : "",
-      outflow: tx.amount < 0 ? (-tx.amount / 100).toString() : "",
+      inflow: tx.amount > 0 ? (code ? formatMinorInput(tx.amount, code) : (tx.amount / 100).toString()) : "",
+      outflow: tx.amount < 0 ? (code ? formatMinorInput(-tx.amount, code) : (-tx.amount / 100).toString()) : "",
+      otherAmount:
+        tx.transferAccountId && otherCode && tx.otherAmountMinor != null ? formatMinorInput(Math.abs(tx.otherAmountMinor), otherCode) : "",
+      originalCurrencyCode: tx.originalCurrencyCode ?? "",
+      originalAmount:
+        tx.originalCurrencyCode && tx.originalAmountMinor != null
+          ? formatMinorInput(tx.originalAmountMinor, tx.originalCurrencyCode)
+          : "",
     });
   };
 
   const saveEdit = async () => {
     if (!editingId) return;
     const tx = data?.txs.find((x) => x.id === editingId);
-    const amount = formAmount(editForm);
-    if (!tx || !amount) return;
+    if (!tx) return;
+    const code = txCurrency(tx);
+    const amount = formAmount(editForm, code);
+    if (!amount) return;
+    const other = boot?.accounts.find((a) => a.id === editForm.transferAccountId);
+    const cross = !!(code && other?.currencyCode && other.currencyCode !== code);
+    const payload: Record<string, unknown> = {
+      accountId: tx.accountId,
+      date: editForm.date,
+      payeeName: editForm.transferAccountId ? "" : editForm.payeeName,
+      transferAccountId: editForm.transferAccountId || undefined,
+      categoryId: editForm.transferAccountId ? undefined : editForm.categoryId || undefined,
+      memo: editForm.memo,
+      amount,
+    };
+    if (cross && other?.currencyCode) {
+      const otherMinor = parseOptionalMinor(editForm.otherAmount, other.currencyCode);
+      if (otherMinor == null || otherMinor <= 0) return;
+      if (amount < 0) payload.toAmountMinor = otherMinor;
+      else payload.fromAmountMinor = otherMinor;
+    }
+    if (!editForm.transferAccountId && editForm.originalCurrencyCode && editForm.originalAmount.trim()) {
+      const originalMinor = parseOptionalMinor(editForm.originalAmount, editForm.originalCurrencyCode);
+      if (originalMinor == null) return;
+      payload.originalCurrencyCode = editForm.originalCurrencyCode;
+      payload.originalAmountMinor = originalMinor;
+    }
     try {
-      await api.updateTx(editingId, {
-        accountId: tx.accountId,
-        date: editForm.date,
-        payeeName: editForm.transferAccountId ? "" : editForm.payeeName,
-        transferAccountId: editForm.transferAccountId || undefined,
-        categoryId: editForm.transferAccountId ? undefined : editForm.categoryId || undefined,
-        memo: editForm.memo,
-        amount,
-      });
+      await api.updateTx(editingId, payload);
       setEditingId(null);
       await reload();
     } catch {
@@ -375,8 +406,48 @@ export function TransactionsPage() {
                   <CategorySelect value={tx.categoryId ?? ""} onChange={(v) => changeCategory(tx, v)} />
                 )}
                 <span className="truncate px-2 text-[12px] text-slate-400">{tx.memo}</span>
-                <span className="num px-2 text-right text-[13px] text-rose-500">{tx.amount < 0 ? fmtMoney(-tx.amount) : ""}</span>
-                <span className="num px-2 text-right text-[13px] text-emerald-600">{tx.amount > 0 ? fmtMoney(tx.amount) : ""}</span>
+                <span className="num px-2 text-right text-[13px] text-rose-500">
+                  {tx.amount < 0 ? (
+                    <>
+                      <span className="block">{formatAccountMoney(-tx.amount, txCurrency(tx), lang)}</span>
+                      {tx.originalCurrencyCode && tx.originalAmountMinor != null && (
+                        <span className="block text-[11px] font-normal text-slate-400">
+                          {formatAccountMoney(tx.originalAmountMinor, tx.originalCurrencyCode, lang)}
+                        </span>
+                      )}
+                      {tx.otherAccountCurrencyCode &&
+                        tx.otherAmountMinor != null &&
+                        tx.otherAccountCurrencyCode !== txCurrency(tx) && (
+                          <span className="block text-[11px] font-normal text-slate-400">
+                            {formatAccountMoney(Math.abs(tx.otherAmountMinor), tx.otherAccountCurrencyCode, lang)}
+                          </span>
+                        )}
+                    </>
+                  ) : (
+                    ""
+                  )}
+                </span>
+                <span className="num px-2 text-right text-[13px] text-emerald-600">
+                  {tx.amount > 0 ? (
+                    <>
+                      <span className="block">{formatAccountMoney(tx.amount, txCurrency(tx), lang)}</span>
+                      {tx.originalCurrencyCode && tx.originalAmountMinor != null && (
+                        <span className="block text-[11px] font-normal text-slate-400">
+                          {formatAccountMoney(tx.originalAmountMinor, tx.originalCurrencyCode, lang)}
+                        </span>
+                      )}
+                      {tx.otherAccountCurrencyCode &&
+                        tx.otherAmountMinor != null &&
+                        tx.otherAccountCurrencyCode !== txCurrency(tx) && (
+                          <span className="block text-[11px] font-normal text-slate-400">
+                            {formatAccountMoney(Math.abs(tx.otherAmountMinor), tx.otherAccountCurrencyCode, lang)}
+                          </span>
+                        )}
+                    </>
+                  ) : (
+                    ""
+                  )}
+                </span>
                 <div className="relative flex items-center justify-end pr-1">
                   {!tx.isStart && (
                     <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100">

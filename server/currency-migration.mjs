@@ -15,6 +15,7 @@ import {
   seedDefaultCurrencyLedgers,
 } from "./currency-state.mjs";
 import { rebuildAssignmentsWithCurrency, rebuildGoalsWithCurrency } from "./currency-schema.mjs";
+import { ensureSystemCategories } from "./currency-ledger.mjs";
 
 export const CURRENCY_MIGRATION_BACKUP_DIR_NAME = "currency-migration-backups";
 
@@ -215,6 +216,7 @@ export async function confirmCurrencyMigration(database, currencyCode, options =
   try {
     const transform = database.transaction(() => {
       applyLegacyCurrencyTransform(database, code, scale, money);
+      ensureSystemCategories(database);
     });
     transform();
   } catch (error) {
