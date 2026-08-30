@@ -1,11 +1,20 @@
 import type { Lang } from "./i18n";
+import { formatMoney } from "./money";
 
 let currencySymbol = "¥";
 export function setCurrencySymbol(s: string) {
   currencySymbol = s || "¥";
 }
 
-export function fmtMoney(cents: number, opts?: { sign?: boolean }): string {
+export function fmtMoney(
+  cents: number,
+  opts?: { sign?: boolean; currencyCode?: string; locale?: string },
+): string {
+  if (opts?.currencyCode) {
+    const formatted = formatMoney(cents, opts.currencyCode, { locale: opts.locale });
+    if (opts.sign && cents > 0) return `+${formatted}`;
+    return formatted;
+  }
   const neg = cents < 0;
   const abs = Math.abs(cents) / 100;
   const str = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -67,6 +76,7 @@ export function addMonthsYm(ym: string, n: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Legacy 2-decimal parser. New code should use parseAmountToMinor. */
 export function parseAmountToCents(input: string): number | null {
   const s = input.replace(/[,，\s¥$￥]/g, "");
   if (!s || !/^-?\d*(\.\d*)?$/.test(s)) return null;

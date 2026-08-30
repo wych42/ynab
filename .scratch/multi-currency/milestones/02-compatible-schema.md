@@ -2,7 +2,7 @@
 
 > Milestone：02
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：统一金额规则和币种目录
 >

@@ -86,7 +86,7 @@
 | 测试面 | 主要测试文件 | 状态 | 完成证据 |
 | --- | --- | --- | --- |
 | 实施前绿色基线 | 现有全量套件 | 已完成 | Node 20.20.2；37 个文件和 248 个测试通过；typecheck、build 和 CI 门槛通过 |
-| Money Module 与币种目录 | `server/money.test.mjs`、`src/money.test.ts` | 未开始 | RED、GREEN 和全量回归记录 |
+| Money Module 与币种目录 | `server/money.test.mjs`、`src/money.test.ts` | 已完成 | 共享矩阵 68 tests；全量 316 tests；最大安全整数格式化不丢最小单位 |
 | 旧数据库迁移 | `server/db.currency-migration.test.mjs` | 未开始 | 迁移矩阵与恢复演练记录 |
 | 币种预算隔离 | `server/engine.currency-budget.test.mjs` | 未开始 | CNY 与 SGD 隔离、家庭 CNY 合并结果 |
 | Currency Ledger Module | `server/currency-ledger.test.mjs` | 未开始 | 交易、转账、对账与原子性结果 |

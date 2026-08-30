@@ -2,7 +2,7 @@
 
 > Milestone：01
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：建立绿色基线和 CI 门槛
 >
@@ -40,8 +40,9 @@ git diff --check
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 验收：待填写
-- Commit：待填写
+- 启动日期：2026-08-31
+- Grok session：`01a05374-234f-7280-b849-1207bf853ccc`，模型 `grok-4.6`，reasoning effort `xhigh`
+- RED：先建立前后端共享测试矩阵，targeted tests 因 `server/money.mjs` 和 `src/money.ts` 不存在而按预期失败。审查又补充最大安全整数格式化用例，证明原实现会把 CNY 金额末位 `.91` 错误显示为 `.90`。
+- GREEN：targeted 2 个文件和 68 个测试通过；全量 39 个文件和 316 个测试通过；typecheck、production build 与 `git diff --check` 通过。
+- 验收：七币种目录、默认启用集合、精度、解析、格式化、十进制换算、安全整数、正负半单位舍入和 AUD 临时扩充均有前后端共享用例。目录与算法只有 `shared/` 一份权威实现，后端和前端入口只负责导出；格式化使用 BigInt 与 `formatToParts`，不会丢失合法最小单位。没有 Schema、Route 或页面功能改动。
+- Commit：本里程碑提交 `feat: add currency-aware money foundation`
