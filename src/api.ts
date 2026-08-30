@@ -10,10 +10,26 @@ import type {
   ImChannel,
   ImChannelInput,
   WechatLoginState,
+  CurrencyMigrationAnomaly,
+  CurrencyMigrationBackup,
+  CurrencyMigrationPreview,
+  CurrencyMigrationConfirmResult,
 } from "./types";
 import { getToken } from "./auth";
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status?: number;
+  code?: string;
+  anomalies?: CurrencyMigrationAnomaly[];
+  backup?: CurrencyMigrationBackup;
+}
+
+function readBackup(value: unknown): CurrencyMigrationBackup | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const backup = value as { fileName?: unknown; filePath?: unknown };
+  if (typeof backup.fileName !== "string" || typeof backup.filePath !== "string") return undefined;
+  return { fileName: backup.fileName, filePath: backup.filePath };
+}
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json" };
@@ -25,11 +41,18 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let msg = `${res.status}`;
+    let body: { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown } | null = null;
     try {
-      const j = await res.json();
-      if (j?.error) msg = j.error;
+      body = (await res.json()) as { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown };
+      if (typeof body?.error === "string") msg = body.error;
     } catch {}
-    throw new ApiError(msg);
+    const err = new ApiError(msg);
+    err.status = res.status;
+    if (typeof body?.code === "string") err.code = body.code;
+    if (Array.isArray(body?.anomalies)) err.anomalies = body.anomalies as CurrencyMigrationAnomaly[];
+    const backup = readBackup(body?.backup);
+    if (backup) err.backup = backup;
+    throw err;
   }
   return res.json() as Promise<T>;
 }
@@ -39,6 +62,12 @@ export const api = {
   login: (password: string) => req<{ token: string }>("/api/auth/login", { method: "POST", body: JSON.stringify({ password }) }),
 
   bootstrap: () => req<Bootstrap>("/api/bootstrap"),
+  getCurrencyMigration: () => req<CurrencyMigrationPreview>("/api/currency-migration"),
+  confirmCurrencyMigration: (currencyCode: string) =>
+    req<CurrencyMigrationConfirmResult>("/api/currency-migration/confirm", {
+      method: "POST",
+      body: JSON.stringify({ currencyCode }),
+    }),
   loadDemo: () => req<{ ok: true }>("/api/demo", { method: "POST" }),
   saveSettings: (body: {
     currencySymbol?: string;

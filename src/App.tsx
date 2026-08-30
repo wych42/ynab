@@ -10,6 +10,7 @@ import { TransactionsPage } from "./pages/TransactionsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
+import { CurrencyMigrationPage } from "./pages/CurrencyMigrationPage";
 import { Spinner } from "./components/ui";
 
 function useHashRoute(): string {
@@ -25,7 +26,7 @@ function useHashRoute(): string {
 
 function Shell() {
   const route = useHashRoute();
-  const { loading, authEnabled, authenticated } = useApp();
+  const { loading, authEnabled, authenticated, boot } = useApp();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // 移动端点击任意导航后自动收起抽屉
@@ -41,6 +42,10 @@ function Shell() {
 
   if (authEnabled && !authenticated) {
     return <LoginPage />;
+  }
+
+  if (boot?.currencyMigrationRequired) {
+    return <CurrencyMigrationPage />;
   }
 
   let page;

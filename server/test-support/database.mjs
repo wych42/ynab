@@ -53,6 +53,18 @@ export function columnNames(database, table) {
   return database.pragma(`table_info(${table})`).map((column) => column.name);
 }
 
+export function primaryKeyColumns(database, table) {
+  return database
+    .pragma(`table_info(${table})`)
+    .filter((column) => column.pk > 0)
+    .sort((a, b) => a.pk - b.pk)
+    .map((column) => column.name);
+}
+
+export function columnInfo(database, table, column) {
+  return database.pragma(`table_info(${table})`).find((entry) => entry.name === column) ?? null;
+}
+
 export function indexList(database, table) {
   return database.pragma(`index_list(${table})`).map((index) => ({
     name: index.name,

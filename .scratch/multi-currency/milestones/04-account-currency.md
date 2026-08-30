@@ -2,7 +2,7 @@
 
 > Milestone：04
 >
-> 状态：blocked
+> 状态：ready-for-agent
 >
 > Blocked by：完成旧账本迁移和恢复路径
 >

@@ -1,6 +1,7 @@
 import express from "express";
 import {
   db,
+  DATA_DIR,
   uid,
   nowIso,
   getSetting,
@@ -58,10 +59,51 @@ import {
   getCurrencyBootstrapState,
   isCurrencyMigrationRequired,
 } from "./currency-state.mjs";
+import { MoneyError } from "./money.mjs";
+import {
+  CurrencyMigrationError,
+  confirmCurrencyMigration,
+  getCurrencyMigrationPreview,
+} from "./currency-migration.mjs";
 
 export const api = express.Router();
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
+
+function backupPayload(backup) {
+  if (!backup || typeof backup.fileName !== "string" || typeof backup.filePath !== "string") return undefined;
+  return { fileName: backup.fileName, filePath: backup.filePath };
+}
+
+function sendCurrencyMigrationConfirmError(res, error) {
+  if (error instanceof CurrencyMigrationError && error.code === "legacy_scale_not_divisible") {
+    return res.status(400).json({ error: error.code, code: error.code, anomalies: error.anomalies });
+  }
+  if (error instanceof MoneyError) {
+    return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  if (error instanceof CurrencyMigrationError && error.code === "currency_migration_failed") {
+    const body = {
+      error: error.code,
+      code: error.code,
+      message: error.message,
+    };
+    const backup = backupPayload(error.backup);
+    if (backup) body.backup = backup;
+    return res.status(500).json(body);
+  }
+  if (error instanceof CurrencyMigrationError && error.code === "currency_migration_backup_failed") {
+    return res.status(500).json({ error: error.code, code: error.code, message: error.message });
+  }
+  if (error instanceof CurrencyMigrationError) {
+    return res.status(400).json({ error: error.code, code: error.code, message: error.message });
+  }
+  return res.status(500).json({
+    error: "currency_migration_failed",
+    code: "currency_migration_failed",
+    message: "currency migration failed",
+  });
+}
 
 const FINANCIAL_WRITE_ROUTES = [
   ["POST", /^\/demo$/],
@@ -160,6 +202,23 @@ api.get("/bootstrap", (req, res) => {
     supportedCurrencies: currency.supportedCurrencies,
     enabledCurrencies: currency.enabledCurrencies,
   });
+});
+
+api.get("/currency-migration", (req, res) => {
+  res.json(getCurrencyMigrationPreview(db));
+});
+
+api.post("/currency-migration/confirm", async (req, res) => {
+  const currencyCode = req.body?.currencyCode;
+  if (typeof currencyCode !== "string" || !currencyCode.trim()) {
+    return bad(res, "currency_code required");
+  }
+  try {
+    const result = await confirmCurrencyMigration(db, currencyCode.trim(), { dataDir: DATA_DIR });
+    res.json(result);
+  } catch (e) {
+    return sendCurrencyMigrationConfirmError(res, e);
+  }
 });
 
 api.get("/settings", (req, res) => {

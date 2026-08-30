@@ -1,4 +1,5 @@
 import type { CurrencyRecord } from "./money";
+export type { CurrencyRecord };
 
 export type Lang = "zh" | "en";
 
@@ -75,6 +76,35 @@ export interface Bootstrap {
   currencyMigrationRequired: boolean;
   supportedCurrencies: CurrencyRecord[];
   enabledCurrencies: string[];
+}
+
+export interface CurrencyMigrationAnomaly {
+  table: string;
+  id: string;
+  field: string;
+  value: number;
+}
+
+export interface CurrencyMigrationPreview {
+  status: "pending" | "complete";
+  currencyMigrationRequired: boolean;
+  currencySymbol: string;
+  suggestedCurrency: string | null;
+  supportedCurrencies: CurrencyRecord[];
+}
+
+export interface CurrencyMigrationBackup {
+  fileName: string;
+  filePath: string;
+}
+
+export interface CurrencyMigrationConfirmResult {
+  status: "complete";
+  alreadyCompleted: boolean;
+  currencyCode?: string;
+  reportingCurrency?: string;
+  enabledCurrencies?: string[];
+  backup?: CurrencyMigrationBackup;
 }
 
 export interface Need {

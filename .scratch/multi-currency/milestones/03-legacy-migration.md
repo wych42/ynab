@@ -2,7 +2,7 @@
 
 > Milestone：03
 >
-> 状态：ready-for-agent
+> 状态：implemented
 >
 > Blocked by：加入兼容的多币种 Schema
 >
@@ -41,8 +41,9 @@ git diff --check
 
 ## 执行记录
 
-- Grok session：待填写
-- RED：待填写
-- GREEN：待填写
-- 验收：待填写
-- Commit：待填写
+- 启动日期：2026-08-31
+- Grok session：`01a053a5-1592-7a40-b205-0dac4e8962f7`，模型 `grok-4.6`，reasoning effort `xhigh`
+- RED：首次测试因缺少正式迁移 Module 和页面而失败。独立审查发现迁移事务失败会泄漏 SQLite 错误且页面不显示备份路径；修正测试用五个失败用例锁定稳定错误、原子回滚和恢复提示。
+- GREEN：targeted 2 个文件和 32 个测试通过；全量 43 个文件和 369 个测试通过；typecheck、production build 与 `git diff --check` 通过。
+- 验收：CNY、SGD、CAD、JPY、空库和目录外代码矩阵通过。迁移在数据变换前生成带 Schema 版本和 UTC 时间的独立 SQLite 备份；JPY 不可整除时返回全部异常且不生成备份；事务中途失败时原库完整回滚、保留迁移前备份并向页面返回恢复路径；备份失败不写数据也不伪造路径；重复确认不会再次缩放、建账本或备份。
+- Commit：本里程碑提交 `feat: migrate legacy budgets to currency ledgers`

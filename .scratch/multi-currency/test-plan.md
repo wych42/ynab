@@ -1,6 +1,6 @@
 # 多币种功能测试计划
 
-> 状态：测试设计已完成，测试实现尚未开始。
+> 状态：测试设计已完成，自动化测试按实现里程碑推进中。
 >
 > 更新日期：2026-08-30。
 >
@@ -87,7 +87,7 @@
 | --- | --- | --- | --- |
 | 实施前绿色基线 | 现有全量套件 | 已完成 | Node 20.20.2；37 个文件和 248 个测试通过；typecheck、build 和 CI 门槛通过 |
 | Money Module 与币种目录 | `server/money.test.mjs`、`src/money.test.ts` | 已完成 | 共享矩阵 68 tests；全量 316 tests；最大安全整数格式化不丢最小单位 |
-| 旧数据库迁移 | `server/db.currency-migration.test.mjs` | 未开始 | 迁移矩阵与恢复演练记录 |
+| 旧数据库迁移 | `server/db.currency-migration.test.mjs` | 已完成 | targeted 32 tests；全量 369 tests；迁移矩阵、原子回滚、备份与独立恢复通过 |
 | 币种预算隔离 | `server/engine.currency-budget.test.mjs` | 未开始 | CNY 与 SGD 隔离、家庭 CNY 合并结果 |
 | Currency Ledger Module | `server/currency-ledger.test.mjs` | 未开始 | 交易、转账、对账与原子性结果 |
 | FX Module 与 Provider | `server/fx.test.mjs`、`server/fx.provider-contract.test.mjs` | 未开始 | Adapter 契约与离线结果 |
