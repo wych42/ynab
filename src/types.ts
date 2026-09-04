@@ -169,6 +169,8 @@ export interface BudgetData {
   uncategorizedCount: number;
   groups: BudGroup[];
   ageOfMoney: number;
+  revision?: number;
+  categoryRevision?: number;
 }
 
 export interface Tx {

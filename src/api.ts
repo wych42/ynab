@@ -28,6 +28,7 @@ export class ApiError extends Error {
   code?: string;
   anomalies?: CurrencyMigrationAnomaly[];
   backup?: CurrencyMigrationBackup;
+  budget?: BudgetData;
 }
 
 function readBackup(value: unknown): CurrencyMigrationBackup | undefined {
@@ -47,9 +48,9 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let msg = `${res.status}`;
-    let body: { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown } | null = null;
+    let body: { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown; budget?: unknown } | null = null;
     try {
-      body = (await res.json()) as { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown };
+      body = (await res.json()) as { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown; budget?: unknown };
       if (typeof body?.error === "string") msg = body.error;
     } catch {}
     const err = new ApiError(msg);
@@ -58,6 +59,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
     if (Array.isArray(body?.anomalies)) err.anomalies = body.anomalies as CurrencyMigrationAnomaly[];
     const backup = readBackup(body?.backup);
     if (backup) err.backup = backup;
+    if (body?.budget && typeof body.budget === "object") err.budget = body.budget as BudgetData;
     throw err;
   }
   return res.json() as Promise<T>;
@@ -140,25 +142,31 @@ export const api = {
     }),
 
   budget: (month: string, currency: string) => req<BudgetData>(`/api/budget/${month}?currency=${encodeURIComponent(currency)}`),
-  assign: (month: string, categoryId: string, cents: number, currency: string) =>
+  assign: (month: string, categoryId: string, cents: number, currency: string, expectedRevision?: number) =>
     req<BudgetData>(`/api/budget/${month}/category/${categoryId}/assign?currency=${encodeURIComponent(currency)}`, {
       method: "PUT",
-      body: JSON.stringify({ assigned: cents }),
+      body: JSON.stringify({ assigned: cents, expectedRevision }),
     }),
-  moveMoney: (month: string, fromId: string, toId: string, cents: number, currency: string) =>
+  moveMoney: (month: string, fromId: string, toId: string, cents: number, currency: string, expectedRevision?: number) =>
     req<BudgetData>(`/api/budget/${month}/move?currency=${encodeURIComponent(currency)}`, {
       method: "POST",
-      body: JSON.stringify({ fromId, toId, amount: cents }),
+      body: JSON.stringify({ fromId, toId, amount: cents, expectedRevision }),
     }),
-  coverOverspending: (month: string, categoryId: string, fromId: string, currency: string) =>
+  coverOverspending: (month: string, categoryId: string, fromId: string, currency: string, expectedRevision?: number) =>
     req<BudgetData>(`/api/budget/${month}/cover?currency=${encodeURIComponent(currency)}`, {
       method: "POST",
-      body: JSON.stringify({ categoryId, fromId }),
+      body: JSON.stringify({ categoryId, fromId, expectedRevision }),
     }),
-  autoAssign: (month: string, currency: string) =>
-    req<BudgetData>(`/api/budget/${month}/auto-assign?currency=${encodeURIComponent(currency)}`, { method: "POST" }),
-  copyLastMonth: (month: string, currency: string) =>
-    req<BudgetData>(`/api/budget/${month}/copy-previous?currency=${encodeURIComponent(currency)}`, { method: "POST" }),
+  autoAssign: (month: string, currency: string, expectedRevision?: number) =>
+    req<BudgetData>(`/api/budget/${month}/auto-assign?currency=${encodeURIComponent(currency)}`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
+  copyLastMonth: (month: string, currency: string, expectedRevision?: number) =>
+    req<BudgetData>(`/api/budget/${month}/copy-previous?currency=${encodeURIComponent(currency)}`, {
+      method: "POST",
+      body: JSON.stringify({ expectedRevision }),
+    }),
 
   accounts: () => req<{ accounts: Account[] }>("/api/accounts"),
   createAccount: (body: {
@@ -215,22 +223,26 @@ export const api = {
       body: JSON.stringify({ ids }),
     }),
 
-  addGroup: (name: string) => req<{ id: string }>("/api/category-groups", { method: "POST", body: JSON.stringify({ name }) }),
-  renameGroup: (id: string, name: string) =>
-    req<{ ok: true }>(`/api/category-groups/${id}`, { method: "PUT", body: JSON.stringify({ name }) }),
-  deleteGroup: (id: string) => req<{ ok: true }>(`/api/category-groups/${id}`, { method: "DELETE" }),
-  addCategory: (groupId: string, name: string) =>
-    req<{ id: string }>("/api/categories", { method: "POST", body: JSON.stringify({ groupId, name }) }),
-  renameCategory: (id: string, name: string) =>
-    req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify({ name }) }),
-  updateCategory: (id: string, patch: { name?: string; note?: string }) =>
-    req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify(patch) }),
-  deleteCategory: (id: string) => req<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
+  addGroup: (name: string, expectedCategoryRevision?: number) =>
+    req<{ id: string }>("/api/category-groups", { method: "POST", body: JSON.stringify({ name, expectedCategoryRevision }) }),
+  renameGroup: (id: string, name: string, expectedCategoryRevision?: number) =>
+    req<{ ok: true }>(`/api/category-groups/${id}`, { method: "PUT", body: JSON.stringify({ name, expectedCategoryRevision }) }),
+  deleteGroup: (id: string, expectedCategoryRevision?: number) =>
+    req<{ ok: true }>(`/api/category-groups/${id}`, { method: "DELETE", body: JSON.stringify({ expectedCategoryRevision }) }),
+  addCategory: (groupId: string, name: string, expectedCategoryRevision?: number) =>
+    req<{ id: string }>("/api/categories", { method: "POST", body: JSON.stringify({ groupId, name, expectedCategoryRevision }) }),
+  renameCategory: (id: string, name: string, expectedCategoryRevision?: number) =>
+    req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify({ name, expectedCategoryRevision }) }),
+  updateCategory: (id: string, patch: { name?: string; note?: string }, expectedCategoryRevision?: number) =>
+    req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify({ ...patch, expectedCategoryRevision }) }),
+  deleteCategory: (id: string, expectedCategoryRevision?: number) =>
+    req<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE", body: JSON.stringify({ expectedCategoryRevision }) }),
   setGoal: (
     categoryId: string,
     body: { type: "monthly" | "targetBalance" | "targetByDate"; target: number; targetMonth?: string | null },
     currency: string,
-  ) => req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify(body) }),
+    expectedRevision?: number,
+  ) => req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify({ ...body, expectedRevision }) }),
   clearGoal: (categoryId: string, currency: string) =>
     req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify({ type: null }) }),
 

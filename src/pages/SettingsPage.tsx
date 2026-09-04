@@ -352,11 +352,15 @@ export function SettingsPage() {
         <div className="mt-5 border-t border-slate-100 pt-4">
           <p className="mb-2 text-xs font-medium text-slate-500">{t("settings_enabledCurrencies")}</p>
           <ul data-testid="enabled-currencies" className="mb-3 flex flex-wrap gap-1.5">
-            {enabledCurrencies.map((code) => (
-              <li key={code} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-600">
-                {code}
-              </li>
-            ))}
+            {enabledCurrencies.map((code) => {
+              const inUse = code === reportingCurrency || (boot?.accounts ?? []).some((acc) => acc.currencyCode === code);
+              return (
+                <li key={code} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-600">
+                  <span>{code}</span>
+                  {inUse ? <span> · {t("settings_inUse")}</span> : null}
+                </li>
+              );
+            })}
           </ul>
           {currenciesToAdd.length > 0 && (
             <div className="flex flex-wrap items-end gap-2">

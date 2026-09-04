@@ -18,7 +18,7 @@ import { Hourglass, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
 import { displayFxRate, displayFxSource, fmtMoney, fmtMonthShort, localeForLang } from "../format";
-import { formatHash, parseHash, pushHash, replaceHash, useHashRoute } from "../hashRoute";
+import { coerceEnabledCurrency, formatHash, parseHash, pushHash, replaceHash, useHashRoute, type CurrencyNotice } from "../hashRoute";
 import type { CashflowDetail, CashflowOverview, InvestmentList, NetWorthReport } from "../types";
 import { Spinner } from "../components/ui";
 
@@ -48,11 +48,47 @@ function reportsSection(path: string): "cashflow" | "investments" | "net-worth" 
   return "cashflow";
 }
 
-export function ReportsPage() {
+function CurrencyFallbackNotice({ notice }: { notice: CurrencyNotice | null }) {
   const { t } = useApp();
+  if (!notice) return null;
+  return (
+    <div role="status" aria-live="polite" className="mb-3 text-xs font-medium text-amber-700">
+      {notice.reason === "disabled"
+        ? t("currency_disabled", { code: notice.requested, fallback: notice.fallback })
+        : t("currency_unsupported", { code: notice.requested, fallback: notice.fallback })}
+    </div>
+  );
+}
+
+export function ReportsPage() {
+  const { t, boot } = useApp();
   const route = useHashRoute();
   const parsed = parseHash(route);
   const section = reportsSection(parsed.path);
+  const [notice, setNotice] = useState<CurrencyNotice | null>(null);
+  const enabled = boot?.enabledCurrencies ?? [];
+  const supported = (boot?.supportedCurrencies ?? []).map((item) => item.code);
+  const fallback = boot?.settings.reportingCurrency && enabled.includes(boot.settings.reportingCurrency)
+    ? boot.settings.reportingCurrency
+    : enabled[0] ?? null;
+
+  useEffect(() => {
+    const requested = parsed.query.currency;
+    if (!requested) return;
+    const coerced = coerceEnabledCurrency(requested, enabled, supported, fallback);
+    if (coerced.notice && coerced.currency) {
+      setNotice(coerced.notice);
+      if (section === "net-worth") {
+        replaceHash(formatHash("/reports/net-worth", { currency: coerced.currency, asOf: parsed.query.asOf || "" }));
+      } else if (section === "cashflow") {
+        const nextQuery = { ...parsed.query };
+        delete nextQuery.currency;
+        replaceHash(formatHash("/reports/cashflow", nextQuery));
+      }
+      return;
+    }
+    setNotice(null);
+  }, [parsed.query.currency, parsed.query.asOf, section, enabled, supported, fallback]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
@@ -79,6 +115,7 @@ export function ReportsPage() {
           </a>
         </nav>
       </div>
+      <CurrencyFallbackNotice notice={notice} />
       {section === "investments" ? (
         <InvestmentReportPage />
       ) : section === "net-worth" ? (

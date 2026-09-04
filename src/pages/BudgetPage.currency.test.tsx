@@ -259,7 +259,7 @@ describe("BudgetPage 按 URL 币种请求并展示", () => {
     const input = await screen.findByDisplayValue("500.00");
     fireEvent.change(input, { target: { value: "12.34" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(h.assign).toHaveBeenCalledWith("2026-08", "cat-1", 1234, "CNY"));
+    await waitFor(() => expect(h.assign).toHaveBeenCalledWith("2026-08", "cat-1", 1234, "CNY", undefined));
   });
 
   it("日元分配没有小数输入和展示", async () => {

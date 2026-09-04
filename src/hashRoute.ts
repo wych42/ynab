@@ -67,28 +67,63 @@ export function pushHash(next: string): void {
   notify();
 }
 
+export type CurrencyNotice = {
+  requested: string;
+  fallback: string;
+  reason: "disabled" | "unsupported";
+};
+
+export function coerceEnabledCurrency(
+  requested: string | undefined,
+  enabledCurrencies: string[],
+  supportedCurrencies: string[],
+  fallback: string | null,
+): { currency: string | null; notice: CurrencyNotice | null } {
+  if (!requested) return { currency: fallback, notice: null };
+  if (enabledCurrencies.includes(requested)) return { currency: requested, notice: null };
+  if (!fallback) return { currency: null, notice: null };
+  const reason = supportedCurrencies.includes(requested) ? "disabled" : "unsupported";
+  return { currency: fallback, notice: { requested, fallback, reason } };
+}
+
 export function completeBudgetHash(opts: {
   enabledCurrencies: string[];
+  supportedCurrencies?: string[];
   reportingCurrency?: string | null;
   storedCurrency?: string | null;
   hash?: string;
-}): { currency: string | null; replaced: boolean } {
+}): { currency: string | null; replaced: boolean; notice: CurrencyNotice | null } {
   const current = opts.hash ?? window.location.hash;
   const parsed = parseHash(current);
-  if (parsed.path !== "/budget") {
-    return { currency: parsed.query.currency ?? null, replaced: false };
-  }
-  if (parsed.query.currency) {
-    return { currency: parsed.query.currency, replaced: false };
-  }
   const fallback = resolveActiveBudgetCurrency(
     opts.enabledCurrencies,
     opts.reportingCurrency,
     opts.storedCurrency,
   );
-  if (!fallback) return { currency: null, replaced: false };
-  replaceHash(formatHash(parsed.path, { ...parsed.query, currency: fallback }));
-  return { currency: fallback, replaced: true };
+  if (parsed.path !== "/budget") {
+    const coerced = coerceEnabledCurrency(
+      parsed.query.currency,
+      opts.enabledCurrencies,
+      opts.supportedCurrencies ?? [],
+      fallback,
+    );
+    return { currency: coerced.currency, replaced: false, notice: coerced.notice };
+  }
+  const coerced = coerceEnabledCurrency(
+    parsed.query.currency,
+    opts.enabledCurrencies,
+    opts.supportedCurrencies ?? [],
+    fallback,
+  );
+  const nextHash = coerced.currency
+    ? formatHash(parsed.path, { ...parsed.query, currency: coerced.currency })
+    : current;
+  const needsReplace = (!parsed.query.currency && !!fallback) || !!coerced.notice;
+  if (needsReplace && coerced.currency && nextHash !== window.location.hash) {
+    replaceHash(nextHash);
+    return { currency: coerced.currency, replaced: true, notice: coerced.notice };
+  }
+  return { currency: coerced.currency, replaced: false, notice: null };
 }
 
 export function useHashRoute(): string {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  coerceEnabledCurrency,
   completeBudgetHash,
   parseHash,
   pushHash,
@@ -96,6 +97,41 @@ describe("completeBudgetHash", () => {
     expect(result.replaced).toBe(false);
     expect(parseHash(window.location.hash).query.currency).toBe("USD");
     expect(parseHash(window.location.hash).query.foo).toBe("1");
+  });
+});
+
+describe("coerceEnabledCurrency", () => {
+  it("distinguishes a catalog-disabled code from an unsupported code", () => {
+    expect(
+      coerceEnabledCurrency("CAD", ["CNY", "USD"], ["CNY", "USD", "CAD", "GBP"], "CNY"),
+    ).toEqual({
+      currency: "CNY",
+      notice: { requested: "CAD", fallback: "CNY", reason: "disabled" },
+    });
+    expect(
+      coerceEnabledCurrency("XXX", ["CNY", "USD"], ["CNY", "USD", "CAD", "GBP"], "CNY"),
+    ).toEqual({
+      currency: "CNY",
+      notice: { requested: "XXX", fallback: "CNY", reason: "unsupported" },
+    });
+  });
+});
+
+describe("completeBudgetHash fallback", () => {
+  it("replaces a disabled currency without pushing history", () => {
+    window.location.hash = "#/budget?currency=CAD";
+    const pushSpy = vi.spyOn(history, "pushState");
+    const result = completeBudgetHash({
+      enabledCurrencies: ["CNY", "USD"],
+      supportedCurrencies: ["CNY", "USD", "CAD", "GBP"],
+      reportingCurrency: "CNY",
+      storedCurrency: null,
+    });
+    expect(result.notice?.reason).toBe("disabled");
+    expect(result.replaced).toBe(true);
+    expect(parseHash(window.location.hash).query.currency).toBe("CNY");
+    expect(pushSpy).not.toHaveBeenCalled();
+    pushSpy.mockRestore();
   });
 });
 

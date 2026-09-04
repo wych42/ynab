@@ -15,13 +15,13 @@ import {
   Target,
   Trash2,
 } from "lucide-react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { useApp } from "../store";
 import { fmtMoney, fmtMoneyShort, fmtMonth, fmtMonthShort, formatMinorInput, localeForLang } from "../format";
 import { parseAmountToMinor } from "../money";
 import type { BudCategory, BudGroup, BudgetData } from "../types";
 import { Btn, Field, Modal, Spinner, inputCls } from "../components/ui";
-import { completeBudgetHash, formatHash, parseHash, pushHash, useHashRoute } from "../hashRoute";
+import { completeBudgetHash, formatHash, parseHash, pushHash, useHashRoute, type CurrencyNotice } from "../hashRoute";
 import { persistBudgetCurrency, readStoredBudgetCurrency } from "../activeCurrency";
 
 const BudgetCurrencyContext = createContext("");
@@ -60,6 +60,8 @@ export function BudgetPage() {
   const [win, setWin] = useState<{ months: string[]; data: Record<string, BudgetData> } | null>(null);
   const currencyRef = useRef<string | null>(null);
   const urlCurrency = parseHash(route).query.currency ?? null;
+  const [currencyNotice, setCurrencyNotice] = useState<CurrencyNotice | null>(null);
+  const [conflict, setConflict] = useState<{ input: string; latest: string } | null>(null);
   const [sel, setSel] = useState<Selection>(null);
   const [editing, setEditing] = useState<{ catId: string; month: string; value: string } | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -93,9 +95,11 @@ export function BudgetPage() {
     if (!boot) return;
     const result = completeBudgetHash({
       enabledCurrencies: boot.enabledCurrencies,
+      supportedCurrencies: (boot.supportedCurrencies ?? []).map((item) => item.code),
       reportingCurrency: boot.settings.reportingCurrency,
       storedCurrency: readStoredBudgetCurrency(),
     });
+    setCurrencyNotice(result.notice);
     if (result.currency) persistBudgetCurrency(result.currency);
   }, [boot, route]);
 
@@ -194,7 +198,25 @@ export function BudgetPage() {
       return;
     }
     if (cents < 0) return;
-    apply(await api.assign(month, catId, cents, currencyRef.current));
+    try {
+      apply(await api.assign(month, catId, cents, currencyRef.current, win?.data[month]?.revision));
+      setConflict(null);
+    } catch (err) {
+      const conflictErr = err as ApiError;
+      if (conflictErr?.code === "budget_revision_conflict" && conflictErr.budget) {
+        apply(conflictErr.budget);
+        setEditing({ catId, month, value });
+        setConflict({
+          input: value,
+          latest: formatMinorInput(
+            conflictErr.budget.groups.flatMap((g) => g.categories).find((c) => c.id === catId)?.assigned ?? 0,
+            currencyRef.current,
+          ),
+        });
+        return;
+      }
+      toast(t("common_error"), "err");
+    }
   };
 
   const copyPrev = async (m: string) => {
@@ -233,6 +255,20 @@ export function BudgetPage() {
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 pb-2 pt-3 md:px-6">
             <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
+            {currencyNotice && (
+              <div role="status" aria-live="polite" className="text-xs font-medium text-amber-700">
+                {currencyNotice.reason === "disabled"
+                  ? t("currency_disabled", { code: currencyNotice.requested, fallback: currencyNotice.fallback })
+                  : t("currency_unsupported", { code: currencyNotice.requested, fallback: currencyNotice.fallback })}
+              </div>
+            )}
+            {conflict && (
+              <div role="status" aria-live="polite" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <div className="font-semibold">{t("budget_conflict")}</div>
+                <div>{t("budget_conflictKept", { value: conflict.input })}</div>
+                <div>{t("budget_conflictLatest", { value: conflict.latest })}</div>
+              </div>
+            )}
             <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
               <button
                 onClick={() => canPrev && setBase(shiftMonth(base, -1))}
@@ -531,6 +567,7 @@ export function BudgetPage() {
           name={renameOpen.name}
           onClose={() => setRenameOpen(null)}
           onSave={async (name) => {
+            if (!confirm(t("budget_categoryShare"))) return;
             if (renameOpen.kind === "group") await api.renameGroup(renameOpen.id, name);
             else await api.renameCategory(renameOpen.id, name);
             setRenameOpen(null);
@@ -1417,6 +1454,7 @@ function AddModal({
         className="w-full"
         onClick={async () => {
           if (!name.trim()) return;
+          if (!confirm(t("budget_categoryShare"))) return;
           if (kind === "group") await api.addGroup(name.trim());
           else await api.addCategory(groupId, name.trim());
           await onDone();
