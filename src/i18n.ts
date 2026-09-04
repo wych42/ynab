@@ -35,7 +35,7 @@ const zh = {
   rep_cashflowIncome: "收入",
   rep_cashflowExpense: "支出",
   rep_cashflowNet: "净流入",
-  rep_netWorthHint: "以下金额已换算到汇总币种，估值日是请求的日期。",
+  rep_netWorthHint: "以下金额已换算到所选折算币种，估值日是请求的日期。",
   rep_incomplete: "缺少汇率，无法给出统一总数。",
   rep_missingRates: "缺失汇率",
   rep_missingPair: "{from} → {to}",

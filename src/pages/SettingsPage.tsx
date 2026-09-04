@@ -357,7 +357,7 @@ export function SettingsPage() {
               return (
                 <li key={code} className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-medium text-slate-600">
                   <span>{code}</span>
-                  {inUse ? <span> · {t("settings_inUse")}</span> : null}
+                  {inUse ? <span> · <span>{t("settings_inUse")}</span></span> : null}
                 </li>
               );
             })}

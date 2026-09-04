@@ -83,6 +83,7 @@ export const api = {
     timezone?: string;
     reportingCurrency?: string;
     enableCurrency?: string;
+    disableCurrency?: string;
     aiBaseUrl?: string;
     aiModel?: string;
     aiKey?: string;

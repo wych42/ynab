@@ -100,7 +100,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("SettingsPage 汇总币种与已启用币种", () => {
+describe("SettingsPage 净资产默认币种与已启用币种", () => {
   it("列出默认五种已启用币种，添加币种只来自目录且没有自由输入", async () => {
     render(<SettingsPage />);
 
@@ -112,6 +112,9 @@ describe("SettingsPage 汇总币种与已启用币种", () => {
     expect(within(enabled).getByText("EUR")).toBeTruthy();
     expect(within(enabled).queryByText("CAD")).toBeNull();
     expect(within(enabled).queryByText("GBP")).toBeNull();
+    expect(within(enabled).getByText("settings_inUse")).toBeTruthy();
+    expect(screen.getByLabelText("settings_reportingCurrency")).toBeTruthy();
+    expect(screen.getByText("settings_reportingHint")).toBeTruthy();
 
     const add = (await screen.findByLabelText("settings_addCurrency")) as HTMLSelectElement;
     expect(add.tagName).toBe("SELECT");
@@ -120,7 +123,7 @@ describe("SettingsPage 汇总币种与已启用币种", () => {
     expect(screen.queryByLabelText("settings_currencyLabel")).toBeNull();
   });
 
-  it("可以从目录启用 CAD，并把汇总币种改成已启用的 USD", async () => {
+  it("可以从目录启用 CAD，并把净资产默认币种改成已启用的 USD", async () => {
     render(<SettingsPage />);
 
     fireEvent.change(await screen.findByLabelText("settings_addCurrency"), { target: { value: "CAD" } });
