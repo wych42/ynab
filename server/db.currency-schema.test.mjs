@@ -101,7 +101,7 @@ function ledgerCodes(database) {
 }
 
 describe("migration versions", () => {
-  it("only appends version 11 and keeps published migration names", () => {
+  it("only appends version 12 and keeps published migration names", () => {
     expect(migrations.map((m) => [m.version, m.name])).toEqual([
       [1, "baseline-schema"],
       [2, "default-created-at"],
@@ -114,6 +114,7 @@ describe("migration versions", () => {
       [9, "chat-images"],
       [10, "compatible-currency-schema"],
       [11, "chat-pending-typed-tools"],
+      [12, "currency-ledger-revision"],
     ]);
   });
 });
@@ -128,6 +129,17 @@ describe("compatible currency schema", () => {
     expect(columnNames(db, "categories")).toContain("system_key");
     expect(columnNames(db, "assignments")).toContain("currency_code");
     expect(columnNames(db, "goals")).toContain("currency_code");
+  });
+
+  it("adds currency_ledgers.revision defaulting to 0 on existing rows", () => {
+    expect(columnNames(db, "currency_ledgers")).toContain("revision");
+    const info = columnInfo(db, "currency_ledgers", "revision");
+    expect(info.notnull).toBe(1);
+    expect(String(info.dflt_value)).toBe("0");
+    expect(db.prepare("SELECT revision FROM currency_ledgers").all().every((row) => row.revision === 0)).toBe(true);
+    const seeded = emptyDb.prepare("SELECT currency_code, revision FROM currency_ledgers").all();
+    expect(seeded.length).toBeGreaterThan(0);
+    expect(seeded.every((row) => row.revision === 0)).toBe(true);
   });
 
   it("adds unique system_key and currency lookup indexes", () => {

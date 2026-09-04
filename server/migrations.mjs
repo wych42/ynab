@@ -348,4 +348,14 @@ CREATE INDEX IF NOT EXISTS idx_fx_rates_pair_date ON fx_rates(base_currency, quo
       if (!cols.includes("pending_args")) db.exec("ALTER TABLE chat_messages ADD COLUMN pending_args TEXT");
     },
   },
+  {
+    version: 12,
+    name: "currency-ledger-revision",
+    up: (db) => {
+      const cols = db.pragma(`table_info(currency_ledgers)`).map((c) => c.name);
+      if (!cols.includes("revision")) {
+        db.exec("ALTER TABLE currency_ledgers ADD COLUMN revision INTEGER NOT NULL DEFAULT 0");
+      }
+    },
+  },
 ];

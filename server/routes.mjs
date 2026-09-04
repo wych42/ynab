@@ -99,19 +99,46 @@ import { createFxModule, isFxError, FxProviderError } from "./fx.mjs";
 import { createReportsModule, isReportsError } from "./reports.mjs";
 import { createInvestmentModule, isInvestmentError } from "./investment.mjs";
 import { loadDemoData } from "./demo.mjs";
+import {
+  isBudgetRevisionError,
+  readCategoryRevision,
+  readLedgerRevision,
+  runBudgetWrite,
+  runCategoryWrite,
+  bumpLedgerRevision,
+} from "./budget-revision.mjs";
 
 export const api = express.Router();
 
 const bad = (res, msg) => res.status(400).json({ error: msg });
 
-function sendAccountCurrencyError(res, error) {
+function sendRevisionError(res, error, { month, currencyCode } = {}) {
+  if (!isBudgetRevisionError(error)) return false;
+  const body = {
+    error: error.code,
+    code: error.code,
+    message: error.message,
+    revision: error.extra.revision,
+    categoryRevision: error.extra.categoryRevision ?? readCategoryRevision(db),
+  };
+  if (error.code === "budget_revision_conflict" && month && currencyCode) {
+    body.budget = budgetPayload(month, currencyCode);
+    body.revision = body.budget.revision;
+  }
+  res.status(409).json(body);
+  return true;
+}
+
+function sendAccountCurrencyError(res, error, ctx) {
+  if (sendRevisionError(res, error, ctx)) return;
   if (isAccountCurrencyError(error) || isFinanceToolError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
   }
   throw error;
 }
 
-function sendLedgerError(res, error) {
+function sendLedgerError(res, error, ctx) {
+  if (sendRevisionError(res, error, ctx)) return;
   if (isCurrencyLedgerError(error) || isAccountCurrencyError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
   }
@@ -716,6 +743,8 @@ function budgetPayload(month, currencyCode) {
     uncategorizedCount,
     groups,
     ageOfMoney: ageOfMoney(currencyCode),
+    revision: readLedgerRevision(db, currencyCode),
+    categoryRevision: readCategoryRevision(db),
   };
 }
 
@@ -736,10 +765,16 @@ api.put("/budget/:month/category/:categoryId/assign", (req, res) => {
     const { month, categoryId } = req.params;
     const cents = Math.round(Number(req.body?.assigned));
     if (!Number.isFinite(cents) || cents < 0) return bad(res, "invalid amount");
-    assignBudget(db, { currencyCode, month, categoryId, assignedMinor: cents });
+    assignBudget(db, {
+      currencyCode,
+      month,
+      categoryId,
+      assignedMinor: cents,
+      expectedRevision: req.body?.expectedRevision,
+    });
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { month: req.params.month, currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 
@@ -751,14 +786,13 @@ api.post("/budget/:month/move", (req, res) => {
     const cents = Math.round(Number(amount));
     if (!fromId || !toId || fromId === toId) return bad(res, "select different categories");
     if (!Number.isFinite(cents) || cents <= 0) return bad(res, "invalid amount");
-    const run = db.transaction(() => {
+    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
       adjustAssignment(db, month, fromId, -cents, currencyCode);
       adjustAssignment(db, month, toId, cents, currencyCode);
     });
-    run();
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { month: req.params.month, currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 
@@ -779,14 +813,13 @@ api.post("/budget/:month/cover", (req, res) => {
       amount = Math.min(overspent, Math.max(donor.available, 0));
       if (amount <= 0) return bad(res, "donor has no available funds");
     }
-    const run = db.transaction(() => {
+    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
       if (fromId !== "rta") adjustAssignment(db, month, fromId, -amount, currencyCode);
       adjustAssignment(db, month, categoryId, amount, currencyCode);
     });
-    run();
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { month: req.params.month, currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 
@@ -799,17 +832,16 @@ api.post("/budget/:month/copy-previous", (req, res) => {
     const rows = db
       .prepare("SELECT category_id, assigned FROM assignments WHERE month=? AND currency_code=?")
       .all(prev, currencyCode);
-    if (rows.length > 0) {
-      const tx = db.transaction(() => {
+    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+      if (rows.length > 0) {
         db.prepare("DELETE FROM assignments WHERE month=? AND currency_code=?").run(month, currencyCode);
         const ins = db.prepare("INSERT INTO assignments(currency_code,month,category_id,assigned) VALUES(?,?,?,?)");
         for (const r of rows) ins.run(currencyCode, month, r.category_id, r.assigned);
-      });
-      tx();
-    }
+      }
+    });
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { month: req.params.month, currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 
@@ -818,26 +850,29 @@ api.post("/budget/:month/auto-assign", (req, res) => {
     const currencyCode = requestCurrency(req);
     const { month } = req.params;
     const p = budgetPayload(month, currencyCode);
-    let rta = p.readyToAssign;
+    const rta = p.readyToAssign;
 
     const flat = p.groups.flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })));
     const ccCats = flat.filter((c) => c.available < 0 && c.id.startsWith("cc:"));
-    for (const c of ccCats) {
-      if (rta <= 0) break;
-      const amt = Math.min(-c.available, rta);
-      adjustAssignment(db, month, c.id, amt, currencyCode);
-      rta -= amt;
-    }
     const withGoals = flat.filter((c) => !c.id.startsWith("cc:") && c.goal && c.need && c.need.need > 0);
-    for (const c of withGoals) {
-      if (rta <= 0) break;
-      const amt = Math.min(c.need.need, rta);
-      adjustAssignment(db, month, c.id, amt, currencyCode);
-      rta -= amt;
-    }
+    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+      let remaining = rta;
+      for (const c of ccCats) {
+        if (remaining <= 0) break;
+        const amt = Math.min(-c.available, remaining);
+        adjustAssignment(db, month, c.id, amt, currencyCode);
+        remaining -= amt;
+      }
+      for (const c of withGoals) {
+        if (remaining <= 0) break;
+        const amt = Math.min(c.need.need, remaining);
+        adjustAssignment(db, month, c.id, amt, currencyCode);
+        remaining -= amt;
+      }
+    });
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { month: req.params.month, currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 
@@ -879,6 +914,7 @@ api.put("/accounts/:id", (req, res) => {
         const bal = accountsWithBalances().find((a) => a.id === acc.id)?.balance || 0;
         if (closed && bal !== 0 && isCreditType(acc.type)) throw new Error("balance must be zero");
         db.prepare("UPDATE accounts SET closed=? WHERE id=?").run(closed ? 1 : 0, acc.id);
+        if (acc.on_budget && closed !== !!acc.closed) bumpLedgerRevision(db, acc.currency_code);
       }
     });
     apply();
@@ -1087,10 +1123,16 @@ api.get("/categories", (req, res) => {
 api.post("/category-groups", (req, res) => {
   const name = (req.body?.name || "").trim();
   if (!name) return bad(res, "name required");
-  const maxOrder = db.prepare("SELECT COALESCE(MAX(sort_order),-1) m FROM category_groups").get().m;
-  const id = uid();
-  db.prepare("INSERT INTO category_groups(id,name,sort_order) VALUES(?,?,?)").run(id, name, maxOrder + 1);
-  res.json({ id });
+  try {
+    const maxOrder = db.prepare("SELECT COALESCE(MAX(sort_order),-1) m FROM category_groups").get().m;
+    const id = uid();
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      db.prepare("INSERT INTO category_groups(id,name,sort_order) VALUES(?,?,?)").run(id, name, maxOrder + 1);
+    });
+    res.json({ id, categoryRevision: readCategoryRevision(db) });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.put("/category-groups/:id", (req, res) => {
@@ -1099,15 +1141,27 @@ api.put("/category-groups/:id", (req, res) => {
   const name = (req.body?.name ?? g.name).trim();
   const hidden = typeof req.body?.hidden === "boolean" ? (req.body.hidden ? 1 : 0) : g.hidden;
   if (hidden && g.is_income) return bad(res, "cannot hide income group");
-  db.prepare("UPDATE category_groups SET name=?, hidden=? WHERE id=?").run(name || g.name, hidden, g.id);
-  res.json({ ok: true });
+  try {
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      db.prepare("UPDATE category_groups SET name=?, hidden=? WHERE id=?").run(name || g.name, hidden, g.id);
+    });
+    res.json({ ok: true, categoryRevision: readCategoryRevision(db) });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.delete("/category-groups/:id", (req, res) => {
   const n = db.prepare("SELECT COUNT(*) c FROM categories WHERE group_id=?").get(req.params.id).c;
   if (n > 0) return bad(res, "group not empty");
-  db.prepare("DELETE FROM category_groups WHERE id=?").run(req.params.id);
-  res.json({ ok: true });
+  try {
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      db.prepare("DELETE FROM category_groups WHERE id=?").run(req.params.id);
+    });
+    res.json({ ok: true, categoryRevision: readCategoryRevision(db) });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.post("/categories", (req, res) => {
@@ -1115,24 +1169,35 @@ api.post("/categories", (req, res) => {
   if (!groupId || !(name || "").trim()) return bad(res, "groupId and name required");
   const g = db.prepare("SELECT * FROM category_groups WHERE id=?").get(groupId);
   if (!g) return bad(res, "group not found");
-  const maxOrder = db.prepare("SELECT COALESCE(MAX(sort_order),-1) m FROM categories WHERE group_id=?").get(groupId).m;
-  const id = uid();
-  db.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)").run(id, groupId, name.trim(), maxOrder + 1);
-  res.json({ id });
+  try {
+    const maxOrder = db.prepare("SELECT COALESCE(MAX(sort_order),-1) m FROM categories WHERE group_id=?").get(groupId).m;
+    const id = uid();
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      db.prepare("INSERT INTO categories(id,group_id,name,sort_order) VALUES(?,?,?,?)").run(id, groupId, name.trim(), maxOrder + 1);
+    });
+    res.json({ id, categoryRevision: readCategoryRevision(db) });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.put("/categories/:id", (req, res) => {
   const c = db.prepare("SELECT * FROM categories WHERE id=?").get(req.params.id);
   if (!c) return bad(res, "not found");
   try {
-    if (Object.prototype.hasOwnProperty.call(req.body || {}, "note")) {
-      updateCategoryNote(db, { categoryId: c.id, note: req.body.note });
-    }
-    if (typeof req.body?.name === "string") {
-      const name = req.body.name.trim();
-      db.prepare("UPDATE categories SET name=? WHERE id=?").run(name || c.name, c.id);
-    }
-    res.json({ ok: true });
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      if (Object.prototype.hasOwnProperty.call(req.body || {}, "note")) {
+        updateCategoryNote(db, { categoryId: c.id, note: req.body.note });
+      }
+      if (typeof req.body?.name === "string") {
+        const name = req.body.name.trim();
+        db.prepare("UPDATE categories SET name=? WHERE id=?").run(name || c.name, c.id);
+      }
+      if (typeof req.body?.hidden === "boolean") {
+        db.prepare("UPDATE categories SET hidden=? WHERE id=?").run(req.body.hidden ? 1 : 0, c.id);
+      }
+    });
+    res.json({ ok: true, categoryRevision: readCategoryRevision(db) });
   } catch (e) {
     return sendAccountCurrencyError(res, e);
   }
@@ -1147,9 +1212,15 @@ api.delete("/categories/:id", (req, res) => {
   const usedTx = db.prepare("SELECT COUNT(*) c FROM transactions WHERE category_id=?").get(req.params.id).c;
   const usedAs = db.prepare("SELECT COUNT(*) c FROM assignments WHERE category_id=?").get(req.params.id).c;
   if (usedTx > 0 || usedAs > 0) return bad(res, "in use");
-  db.prepare("DELETE FROM goals WHERE category_id=?").run(req.params.id);
-  db.prepare("DELETE FROM categories WHERE id=?").run(req.params.id);
-  res.json({ ok: true });
+  try {
+    runCategoryWrite(db, req.body?.expectedCategoryRevision, () => {
+      db.prepare("DELETE FROM goals WHERE category_id=?").run(req.params.id);
+      db.prepare("DELETE FROM categories WHERE id=?").run(req.params.id);
+    });
+    res.json({ ok: true, categoryRevision: readCategoryRevision(db) });
+  } catch (e) {
+    return sendAccountCurrencyError(res, e);
+  }
 });
 
 api.put("/goals/:categoryId", (req, res) => {
@@ -1159,21 +1230,22 @@ api.put("/goals/:categoryId", (req, res) => {
     if (!c) return bad(res, "not found");
     const { type, target, targetMonth } = req.body || {};
     if (type == null) {
-      setGoal(db, { currencyCode, categoryId: c.id, type: null });
-      return res.json({ ok: true, currencyCode });
+      setGoal(db, { currencyCode, categoryId: c.id, type: null, expectedRevision: req.body?.expectedRevision });
+      return res.json({ ok: true, currencyCode, revision: readLedgerRevision(db, currencyCode) });
     }
     if (!["monthly", "targetBalance", "targetByDate"].includes(type)) return bad(res, "invalid type");
     const cents = Math.max(Math.round(Number(target) || 0), 0);
     setGoal(db, {
       currencyCode,
+      expectedRevision: req.body?.expectedRevision,
       categoryId: c.id,
       type,
       targetMinor: cents,
       targetMonth: type === "targetByDate" ? targetMonth || null : null,
     });
-    res.json({ ok: true, currencyCode });
+    res.json({ ok: true, currencyCode, revision: readLedgerRevision(db, currencyCode) });
   } catch (e) {
-    return sendAccountCurrencyError(res, e);
+    return sendAccountCurrencyError(res, e, { currencyCode: typeof req.query?.currency === "string" ? req.query.currency : undefined });
   }
 });
 

@@ -13,6 +13,7 @@ import {
   reconcileAccount,
 } from "./currency-ledger.mjs";
 import { CURRENCY_MIGRATION_LOCK_ERROR, isCurrencyMigrationRequired } from "./currency-state.mjs";
+import { runBudgetWrite } from "./budget-revision.mjs";
 
 export const SQL_WRITE_NOT_ALLOWED = "sql_write_not_allowed";
 export const PROTECTED_TABLE_ERROR = "this table is protected";
@@ -152,7 +153,9 @@ export function assignBudget(database, input = {}) {
   if (typeof assignedMinor !== "number" || !Number.isInteger(assignedMinor) || !Number.isSafeInteger(assignedMinor) || assignedMinor < 0) {
     throw new FinanceToolError("invalid_amount", "invalid amount");
   }
-  upsertAssignment(database, month, input.categoryId, assignedMinor, currencyCode);
+  runBudgetWrite(database, [currencyCode], input.expectedRevision, () => {
+    upsertAssignment(database, month, input.categoryId, assignedMinor, currencyCode);
+  });
   return { currencyCode, month, categoryId: input.categoryId, assignedMinor };
 }
 
@@ -162,7 +165,9 @@ export function setGoal(database, input = {}) {
   if (!cat) throw new FinanceToolError("not_found", "not found");
   const type = input.type;
   if (type == null || type === "clear" || type === "none") {
-    database.prepare("DELETE FROM goals WHERE category_id=? AND currency_code=?").run(cat.id, currencyCode);
+    runBudgetWrite(database, [currencyCode], input.expectedRevision, () => {
+      database.prepare("DELETE FROM goals WHERE category_id=? AND currency_code=?").run(cat.id, currencyCode);
+    });
     return { currencyCode, categoryId: cat.id, cleared: true };
   }
   if (!GOAL_TYPES.has(type)) throw new FinanceToolError("invalid_goal_type", "invalid type");
@@ -172,11 +177,13 @@ export function setGoal(database, input = {}) {
     throw new FinanceToolError("invalid_amount", "invalid amount");
   }
   const targetMonth = type === "targetByDate" ? input.targetMonth || null : null;
-  database
-    .prepare(
-      "INSERT INTO goals(currency_code,category_id,type,target,target_month) VALUES(?,?,?,?,?) ON CONFLICT(currency_code,category_id) DO UPDATE SET type=excluded.type,target=excluded.target,target_month=excluded.target_month"
-    )
-    .run(currencyCode, cat.id, type, targetMinor, targetMonth);
+  runBudgetWrite(database, [currencyCode], input.expectedRevision, () => {
+    database
+      .prepare(
+        "INSERT INTO goals(currency_code,category_id,type,target,target_month) VALUES(?,?,?,?,?) ON CONFLICT(currency_code,category_id) DO UPDATE SET type=excluded.type,target=excluded.target,target_month=excluded.target_month"
+      )
+      .run(currencyCode, cat.id, type, targetMinor, targetMonth);
+  });
   return { currencyCode, categoryId: cat.id, type, targetMinor, targetMonth };
 }
 

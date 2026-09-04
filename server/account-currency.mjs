@@ -5,6 +5,7 @@ import {
   createCurrencyLedger,
   listEnabledCurrencyCodes,
 } from "./currency-state.mjs";
+import { bumpLedgerRevision } from "./budget-revision.mjs";
 
 export class AccountCurrencyError extends Error {
   constructor(code, message) {
@@ -207,6 +208,7 @@ export function createAccountRecord(database, input, options = {}) {
         )
         .run(uid(), id, startingDate, "__starting__", startingBalanceMinor, createdAt);
     }
+    if (meta.onBudget && currencyCode) bumpLedgerRevision(database, currencyCode);
   });
   run();
   return id;

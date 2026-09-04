@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { MoneyError, assertSupportedCurrency } from "./money.mjs";
+import { runBudgetWrite } from "./budget-revision.mjs";
 
 export const CURRENCY_TRANSFER_SYSTEM_KEY = "currency_transfer";
 export const CURRENCY_TRANSFER_NAME = "换汇转出";
@@ -196,7 +197,7 @@ export function postTransaction(database, input = {}, options = {}) {
   }
   const original = parseOriginal(input, acc.currency_code);
   const id = options.keepId || input.id || uid();
-  const run = database.transaction(() => {
+  const write = () => {
     insertLeg(database, {
       id,
       accountId: acc.id,
@@ -211,8 +212,12 @@ export function postTransaction(database, input = {}, options = {}) {
       originalCurrencyCode: original.originalCurrencyCode,
       originalAmountMinor: original.originalAmountMinor,
     });
-  });
-  run();
+  };
+  if (acc.on_budget) runBudgetWrite(database, [acc.currency_code], input.expectedRevision, write);
+  else {
+    const run = database.transaction(write);
+    run();
+  }
   return { id };
 }
 
@@ -267,7 +272,7 @@ export function postTransfer(database, input = {}, options = {}) {
   const payeeName = (input.payeeName || "").trim();
   const cleared = input.cleared;
 
-  const run = database.transaction(() => {
+  const write = () => {
     insertLeg(database, {
       id: sourceId,
       accountId: fromAcc.id,
@@ -292,8 +297,8 @@ export function postTransfer(database, input = {}, options = {}) {
       cleared,
       pairId,
     });
-  });
-  run();
+  };
+  runBudgetWrite(database, [fromAcc.currency_code, toAcc.currency_code], input.expectedRevision, write);
   return { pairId, sourceId, destId };
 }
 
@@ -467,7 +472,7 @@ export function reconcileAccount(database, input = {}) {
   const markCleared = !!input.markCleared;
   const asOfDate = parseDate(input.asOfDate || utcToday());
   let adjustment = null;
-  const run = database.transaction(() => {
+  const write = () => {
     if (statement !== undefined) {
       const start = acc.starting_balance_date || null;
       const calc =
@@ -495,7 +500,11 @@ export function reconcileAccount(database, input = {}) {
         .run(acc.id);
     }
     database.prepare("UPDATE transactions SET reconciled=1 WHERE account_id=? AND cleared=1").run(acc.id);
-  });
-  run();
+  };
+  if (acc.on_budget) runBudgetWrite(database, [acc.currency_code], input.expectedRevision, write);
+  else {
+    const run = database.transaction(write);
+    run();
+  }
   return { ok: true, adjustment };
 }
