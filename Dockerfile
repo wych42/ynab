@@ -27,6 +27,7 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server ./server
+COPY --from=build /app/shared ./shared
 # 确保数据库目录存在且归 node 用户所有（配合命名卷持久化）
 RUN mkdir -p /data && chown -R node:node /data
 USER node
