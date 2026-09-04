@@ -1,7 +1,9 @@
-import { addMonths, endOfMonth } from "./db.mjs";
+import { addMonths, currentMonth, endOfMonth } from "./db.mjs";
 import { requireEnabledCurrency } from "./account-currency.mjs";
+import { listEnabledCurrencyCodes } from "./currency-state.mjs";
 import { MoneyError, convertAmount } from "./money.mjs";
 import { parseYmd } from "./fx-providers.mjs";
+import { buildNativeReport } from "./engine.mjs";
 
 export class ReportsError extends Error {
   constructor(code, message) {
@@ -261,5 +263,57 @@ export function createReportsModule({ db, fx } = {}) {
     };
   }
 
-  return { buildNetWorthReport };
+  function buildCashflowOverview({ month } = {}) {
+    const current = typeof month === "string" && month ? month : currentMonth();
+    const enabled = listEnabledCurrencyCodes(db);
+    const incomeCatIds = new Set(
+      db
+        .prepare("SELECT c.id FROM categories c JOIN category_groups g ON g.id=c.group_id WHERE g.is_income=1")
+        .all()
+        .map((row) => row.id)
+    );
+    const isIncome = (categoryId) => (categoryId ? incomeCatIds.has(categoryId) : true);
+    const byCode = new Map(
+      enabled.map((code) => [
+        code,
+        { currencyCode: code, incomeMinor: 0, expenseMinor: 0, netInflowMinor: 0, active: false },
+      ])
+    );
+    const rows = db
+      .prepare(
+        `SELECT t.amount, t.category_id, t.transfer_account_id, t.is_start, t.is_reconcile_adjustment,
+                a.currency_code, a.on_budget
+         FROM transactions t JOIN accounts a ON a.id=t.account_id
+         WHERE substr(t.date, 1, 7) = ?`
+      )
+      .all(current);
+    for (const tx of rows) {
+      if (!tx.on_budget || tx.is_start || tx.is_reconcile_adjustment || tx.transfer_account_id) continue;
+      const entry = byCode.get(tx.currency_code);
+      if (!entry) continue;
+      entry.active = true;
+      if (isIncome(tx.category_id)) entry.incomeMinor += tx.amount;
+      else if (tx.amount < 0) entry.expenseMinor += -tx.amount;
+    }
+    for (const entry of byCode.values()) {
+      entry.netInflowMinor = entry.incomeMinor - entry.expenseMinor;
+    }
+    return { month: current, currencies: [...byCode.values()] };
+  }
+
+  function buildCashflowDetail({ currencyCode, months } = {}) {
+    const report = buildNativeReport({ currencyCode, months });
+    return {
+      currencyCode: report.currencyCode,
+      months: report.months,
+      income: report.income,
+      expense: report.expense,
+      breakdown: report.breakdown,
+      topPayees: report.topPayees,
+      incomeSources: report.incomeSources,
+      ageOfMoney: report.ageOfMoney,
+    };
+  }
+
+  return { buildNetWorthReport, buildCashflowOverview, buildCashflowDetail };
 }

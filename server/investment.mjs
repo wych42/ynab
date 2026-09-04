@@ -122,5 +122,49 @@ export function createInvestmentModule({ db } = {}) {
     };
   }
 
-  return { getInvestmentAccount };
+  function listInvestmentAccounts({ asOf, months } = {}) {
+    const asOfDate = parseYmd(asOf, InvestmentError, "invalid_date");
+    const monthCount = parseMonths(months);
+    const accounts = db
+      .prepare(
+        "SELECT id FROM accounts WHERE type='investment' AND COALESCE(on_budget,0)=0 ORDER BY sort_order, created_at, name"
+      )
+      .all();
+    const views = accounts.map((row) => getInvestmentAccount({ accountId: row.id, asOf: asOfDate, months: monthCount }));
+    const byCurrency = new Map();
+    for (const view of views) {
+      const current = byCurrency.get(view.currencyCode) || {
+        currencyCode: view.currencyCode,
+        balanceMinor: 0,
+        balanceChangeMinor: 0,
+        contributionsMinor: 0,
+        withdrawalsMinor: 0,
+        netContributionsMinor: 0,
+      };
+      current.balanceMinor += view.balanceMinor;
+      current.balanceChangeMinor += view.balanceChangeMinor;
+      current.contributionsMinor += view.contributionsMinor;
+      current.withdrawalsMinor += view.withdrawalsMinor;
+      current.netContributionsMinor += view.netContributionsMinor;
+      byCurrency.set(view.currencyCode, current);
+    }
+    return {
+      asOf: asOfDate,
+      months: monthCount,
+      accounts: views.map((view) => ({
+        accountId: view.accountId,
+        name: view.name,
+        currencyCode: view.currencyCode,
+        balanceMinor: view.balanceMinor,
+        balanceChangeMinor: view.balanceChangeMinor,
+        contributionsMinor: view.contributionsMinor,
+        withdrawalsMinor: view.withdrawalsMinor,
+        netContributionsMinor: view.netContributionsMinor,
+        latestValuationDate: view.latestValuationDate,
+      })),
+      subtotalsByCurrency: [...byCurrency.values()].sort((a, b) => a.currencyCode.localeCompare(b.currencyCode)),
+    };
+  }
+
+  return { getInvestmentAccount, listInvestmentAccounts };
 }

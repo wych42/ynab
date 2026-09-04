@@ -1177,6 +1177,28 @@ api.put("/goals/:categoryId", (req, res) => {
   }
 });
 
+api.get("/reports/cashflow/:code", (req, res) => {
+  try {
+    const months = Math.min(Math.max(Number(req.query.months) || 12, 3), 24);
+    res.json(reportsModule.buildCashflowDetail({ currencyCode: req.params.code, months }));
+  } catch (e) {
+    return sendReportsError(res, e);
+  }
+});
+
+api.get("/reports/cashflow", (req, res) => {
+  try {
+    if (typeof req.query.currency === "string" && req.query.currency) {
+      const months = Math.min(Math.max(Number(req.query.months) || 12, 3), 24);
+      res.json(reportsModule.buildCashflowDetail({ currencyCode: req.query.currency, months }));
+      return;
+    }
+    res.json(reportsModule.buildCashflowOverview());
+  } catch (e) {
+    return sendReportsError(res, e);
+  }
+});
+
 api.get("/reports/overview", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
@@ -1207,6 +1229,19 @@ api.get("/reports/net-worth", async (req, res) => {
     res.json(report);
   } catch (e) {
     return sendReportsError(res, e);
+  }
+});
+
+api.get("/investments", (req, res) => {
+  try {
+    res.json(
+      investmentModule.listInvestmentAccounts({
+        asOf: req.query.asOf,
+        months: req.query.months,
+      })
+    );
+  } catch (e) {
+    return sendInvestmentError(res, e);
   }
 });
 
