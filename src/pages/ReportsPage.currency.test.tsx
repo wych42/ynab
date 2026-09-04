@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { Bootstrap, CashflowOverview, CurrencyRecord } from "../types";
+import type { Bootstrap, CashflowDetail, CashflowOverview, CurrencyRecord } from "../types";
 import { formatMoney } from "../money";
 
 const SUPPORTED: CurrencyRecord[] = [
@@ -123,5 +123,37 @@ describe("ReportsPage 收支全部", () => {
     expect(h.cashflowDetail).not.toHaveBeenCalled();
     expect(h.nativeReport).not.toHaveBeenCalled();
     expect(screen.getByText(/查看币种/)).toBeTruthy();
+  });
+
+  it("selected 查看币种 chip has aria-pressed and a role name, not a bare CNY", async () => {
+    render(<ReportsPage />);
+    await waitFor(() => expect(h.cashflowOverview).toHaveBeenCalled());
+    const all = screen.getByRole("button", { name: "查看币种：全部" });
+    expect(all.getAttribute("aria-pressed")).toBe("true");
+    const cny = screen.getByRole("link", { name: "查看币种：CNY" });
+    expect(cny.getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("link", { name: /^CNY$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^全部$/ })).toBeNull();
+  });
+
+  it("cashflow detail selected currency has aria-current and 查看币种 in the accessible name", async () => {
+    const detail: CashflowDetail = {
+      currencyCode: "CNY",
+      months: ["2026-08"],
+      income: [{ month: "2026-08", value: 200_000 }],
+      expense: [{ month: "2026-08", value: 80_000 }],
+      breakdown: [],
+      topPayees: [],
+      incomeSources: [],
+      ageOfMoney: 1,
+    };
+    h.cashflowDetail.mockResolvedValue(detail);
+    window.location.hash = "#/reports/cashflow?currency=CNY";
+    render(<ReportsPage />);
+    await waitFor(() => expect(h.cashflowDetail).toHaveBeenCalledWith("CNY", 12));
+    const selected = screen.getByRole("link", { name: "查看币种：CNY" });
+    expect(selected.getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("link", { name: "查看币种：全部" }).getAttribute("aria-current")).toBeNull();
+    expect(screen.queryByRole("link", { name: /^CNY$/ })).toBeNull();
   });
 });

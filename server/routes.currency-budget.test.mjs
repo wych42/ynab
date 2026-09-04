@@ -13,6 +13,14 @@ afterAll(() => server.close());
 const call = (method, url, body) => server.call(method, url, body);
 const month = currentMonth();
 
+async function revisionOf(currency, m = month) {
+  const result = await call("GET", `/api/budget/${m}?currency=${currency}`);
+  if (result.status !== 200 || typeof result.json?.revision !== "number") {
+    throw new Error(`revisionOf ${currency} ${m}: ${result.status} ${JSON.stringify(result.json)}`);
+  }
+  return result.json.revision;
+}
+
 function expectCurrencyError(result, code) {
   expect(result.status).toBe(400);
   expect(result.json).toMatchObject({ error: code, code });
@@ -81,6 +89,7 @@ describe("budget and goal routes require query currency", () => {
 
     const cnyAssign = await call("PUT", `/api/budget/${month}/category/${categoryId}/assign?currency=CNY`, {
       assigned: 12_000,
+      expectedRevision: await revisionOf("CNY"),
     });
     expect(cnyAssign.status).toBe(200);
     expect(cnyAssign.json.currencyCode).toBe("CNY");
@@ -89,6 +98,7 @@ describe("budget and goal routes require query currency", () => {
 
     const sgdAssign = await call("PUT", `/api/budget/${month}/category/${categoryId}/assign?currency=SGD`, {
       assigned: 3_000,
+      expectedRevision: await revisionOf("SGD"),
     });
     expect(sgdAssign.status).toBe(200);
     expect(sgdAssign.json.currencyCode).toBe("SGD");
@@ -99,8 +109,16 @@ describe("budget and goal routes require query currency", () => {
     expect(cnyAgain.json.groups.flatMap((group) => group.categories).find((cat) => cat.id === categoryId).assigned).toBe(12_000);
     expect(cnyAgain.json.readyToAssign).toBe(50_000 - 12_000);
 
-    const cnyGoal = await call("PUT", `/api/goals/${categoryId}?currency=CNY`, { type: "monthly", target: 12_000 });
-    const sgdGoal = await call("PUT", `/api/goals/${categoryId}?currency=SGD`, { type: "monthly", target: 4_000 });
+    const cnyGoal = await call("PUT", `/api/goals/${categoryId}?currency=CNY`, {
+      type: "monthly",
+      target: 12_000,
+      expectedRevision: await revisionOf("CNY"),
+    });
+    const sgdGoal = await call("PUT", `/api/goals/${categoryId}?currency=SGD`, {
+      type: "monthly",
+      target: 4_000,
+      expectedRevision: await revisionOf("SGD"),
+    });
     expect(cnyGoal.status).toBe(200);
     expect(sgdGoal.status).toBe(200);
 
@@ -117,19 +135,33 @@ describe("budget and goal routes require query currency", () => {
 
   it("copy-previous and move stay inside the requested currency", async () => {
     const prev = addMonths(month, -1);
-    await call("PUT", `/api/budget/${prev}/category/${categoryId}/assign?currency=CNY`, { assigned: 2_200 });
-    await call("PUT", `/api/budget/${prev}/category/${categoryId}/assign?currency=SGD`, { assigned: 900 });
-    const copied = await call("POST", `/api/budget/${month}/copy-previous?currency=CNY`);
+    const prevCny = await call("PUT", `/api/budget/${prev}/category/${categoryId}/assign?currency=CNY`, {
+      assigned: 2_200,
+      expectedRevision: await revisionOf("CNY"),
+    });
+    expect(prevCny.status).toBe(200);
+    const prevSgd = await call("PUT", `/api/budget/${prev}/category/${categoryId}/assign?currency=SGD`, {
+      assigned: 900,
+      expectedRevision: await revisionOf("SGD"),
+    });
+    expect(prevSgd.status).toBe(200);
+    const copied = await call("POST", `/api/budget/${month}/copy-previous?currency=CNY`, {
+      expectedRevision: await revisionOf("CNY"),
+    });
     expect(copied.status).toBe(200);
     expect(copied.json.groups.flatMap((g) => g.categories).find((c) => c.id === categoryId).assigned).toBe(2_200);
     const sgd = await call("GET", `/api/budget/${month}?currency=SGD`);
     expect(sgd.json.groups.flatMap((g) => g.categories).find((c) => c.id === categoryId).assigned).toBe(3_000);
 
-    await call("PUT", `/api/budget/${month}/category/${otherId}/assign?currency=CNY`, { assigned: 500 });
+    await call("PUT", `/api/budget/${month}/category/${otherId}/assign?currency=CNY`, {
+      assigned: 500,
+      expectedRevision: await revisionOf("CNY"),
+    });
     const moved = await call("POST", `/api/budget/${month}/move?currency=CNY`, {
       fromId: categoryId,
       toId: otherId,
       amount: 200,
+      expectedRevision: await revisionOf("CNY"),
     });
     expect(moved.status).toBe(200);
     const cats = moved.json.groups.flatMap((g) => g.categories);
@@ -166,7 +198,7 @@ describe("credit-card virtual assignment targets", () => {
     const assigned = await call(
       "PUT",
       `/api/budget/${month}/category/${encodeURIComponent(`cc:${cnyCc}`)}/assign?currency=CNY`,
-      { assigned: 800 },
+      { assigned: 800, expectedRevision: await revisionOf("CNY") },
     );
     expect(assigned.status).toBe(200);
     expect(assigned.json.currencyCode).toBe("CNY");
@@ -184,7 +216,7 @@ describe("credit-card virtual assignment targets", () => {
     const rejected = await call(
       "PUT",
       `/api/budget/${month}/category/${encodeURIComponent(`cc:${sgdCc}`)}/assign?currency=CNY`,
-      { assigned: 900 },
+      { assigned: 900, expectedRevision: await revisionOf("CNY") },
     );
     expect(rejected.status).toBe(400);
     expect(rejected.json).toMatchObject({ error: "invalid_assignment_target", code: "invalid_assignment_target" });
@@ -202,6 +234,7 @@ describe("credit-card virtual assignment targets", () => {
       fromId: categoryId,
       toId: `cc:${sgdCc}`,
       amount: 150,
+      expectedRevision: await revisionOf("CNY"),
     });
     expect(moved.status).toBe(400);
     expect(moved.json.code).toBe("invalid_assignment_target");
@@ -216,6 +249,7 @@ describe("credit-card virtual assignment targets", () => {
     const covered = await call("POST", `/api/budget/${month}/cover?currency=CNY`, {
       categoryId: `cc:${sgdCc}`,
       fromId: categoryId,
+      expectedRevision: await revisionOf("CNY"),
     });
     expect(covered.status).toBe(400);
     expect(covered.json.code).toBe("invalid_assignment_target");

@@ -223,7 +223,7 @@ export function BudgetPage() {
     if (!confirm(t("budget_copyLastConfirm")) || !currencyRef.current) return;
     setCopying(true);
     try {
-      apply(await api.copyLastMonth(m, currencyRef.current));
+      apply(await api.copyLastMonth(m, currencyRef.current, win?.data[m]?.revision));
       toast(t("budget_copyLastOk"));
     } catch {
       toast(t("common_error"), "err");
@@ -328,7 +328,7 @@ export function BudgetPage() {
                   <Btn
                     variant="primary"
                     className="mt-3 w-full"
-                    onClick={() => api.autoAssign(cur.month, currency).then(apply).then(() => toast(t("budget_autoAssign") + " ✓"))}
+                    onClick={() => api.autoAssign(cur.month, currency, cur.revision).then(apply).then(() => toast(t("budget_autoAssign") + " ✓"))}
                   >
                     <Sparkles size={14} /> {t("budget_autoAssign")}
                   </Btn>
@@ -949,7 +949,7 @@ function Inspector({
   }, [onClose]);
   const assign = async (cents: number) => {
     if (!cat || !currency) return;
-    onApply(await api.assign(data.month, cat.id, cents, currency));
+    onApply(await api.assign(data.month, cat.id, cents, currency, data.revision));
     toast(money(cents) + " ✓");
   };
 
@@ -989,7 +989,7 @@ function Inspector({
                 ? "这是尚未分配任何任务的钱。YNAB 第一法则：给每一块钱一个任务，把它分配到下面的分类里。"
                 : "This is money with no job yet. Rule one: give every dollar a job by assigning it below."}
             </p>
-            <Btn variant="primary" className="mt-4 w-full" onClick={() => currency && api.autoAssign(data.month, currency).then(onApply)}>
+            <Btn variant="primary" className="mt-4 w-full" onClick={() => currency && api.autoAssign(data.month, currency, data.revision).then(onApply)}>
               <Sparkles size={14} /> {t("budget_autoAssign")}
             </Btn>
             <Btn className="mt-2 w-full" onClick={onMove}>
@@ -1119,13 +1119,13 @@ function Inspector({
                       type: gf.type as "monthly" | "targetBalance" | "targetByDate",
                       target: cents,
                       targetMonth: gf.date || null,
-                    }, currency);
+                    }, currency, data.revision);
                     onApply(await api.budget(data.month, currency));
                     toast("✓");
                   }}
                   onClear={async () => {
                     if (!currency) return;
-                    await api.clearGoal(cat.id, currency);
+                    await api.clearGoal(cat.id, currency, data.revision);
                     onApply(await api.budget(data.month, currency));
                   }}
                 />
@@ -1321,7 +1321,7 @@ function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: 
             return;
           }
           if (cents <= 0) return;
-          onDone(await api.moveMoney(data.month, from, to, cents, currency));
+          onDone(await api.moveMoney(data.month, from, to, cents, currency, data.revision));
           toast("✓");
         }}
       >
@@ -1388,7 +1388,7 @@ function CoverModal({
             className="mt-4 w-full"
             onClick={async () => {
               if (!catId || !fromId) return;
-              if (currency) onDone(await api.coverOverspending(data.month, catId, fromId, currency));
+              if (currency) onDone(await api.coverOverspending(data.month, catId, fromId, currency, data.revision));
             }}
           >
             {t("inspector_coverBtn")}

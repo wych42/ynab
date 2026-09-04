@@ -48,6 +48,16 @@ function reportsSection(path: string): "cashflow" | "investments" | "net-worth" 
   return "cashflow";
 }
 
+function currencyRoleName(role: string, code: string) {
+  return `${role}：${code}`;
+}
+
+function currencyChipClass(selected: boolean) {
+  return `rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${
+    selected ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+  }`;
+}
+
 function CurrencyFallbackNotice({ notice }: { notice: CurrencyNotice | null }) {
   const { t } = useApp();
   if (!notice) return null;
@@ -147,7 +157,9 @@ function CashflowOverviewPage() {
         <span className="font-semibold text-slate-600">{`${t("rep_viewCurrency")}：${t("rep_viewAll")}`}</span>
         <button
           type="button"
-          className="rounded-full bg-brand-600 px-2.5 py-0.5 text-[12px] font-semibold text-white"
+          className={currencyChipClass(true)}
+          aria-label={currencyRoleName(t("rep_viewCurrency"), t("rep_viewAll"))}
+          aria-pressed="true"
         >
           {t("rep_viewAll")}
         </button>
@@ -157,7 +169,8 @@ function CashflowOverviewPage() {
             <a
               key={code}
               href={`#/reports/cashflow?currency=${encodeURIComponent(code)}`}
-              className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-200"
+              className={currencyChipClass(false)}
+              aria-label={currencyRoleName(t("rep_viewCurrency"), code)}
             >
               {code}
               {row && !row.active ? ` · ${t("rep_inactive")}` : ""}
@@ -224,16 +237,20 @@ function CashflowDetailPage({ currency }: { currency: string }) {
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <span className="font-semibold text-slate-600">{`${t("rep_viewCurrency")}：${currency}`}</span>
-        <a href="#/reports/cashflow" className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-semibold text-slate-600">
+        <a
+          href="#/reports/cashflow"
+          className={currencyChipClass(false)}
+          aria-label={currencyRoleName(t("rep_viewCurrency"), t("rep_viewAll"))}
+        >
           {t("rep_viewAll")}
         </a>
         {enabled.map((code) => (
           <a
             key={code}
             href={`#/reports/cashflow?currency=${encodeURIComponent(code)}`}
-            className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${
-              code === currency ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600"
-            }`}
+            className={currencyChipClass(code === currency)}
+            aria-label={currencyRoleName(t("rep_viewCurrency"), code)}
+            aria-current={code === currency ? "true" : undefined}
           >
             {code}
           </a>
@@ -356,21 +373,21 @@ function NetWorthPage() {
   return (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
-          <span>{t("rep_convertTo")}</span>
-          <select
-            aria-label={t("rep_convertTo")}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
-            value={currency ?? ""}
-            onChange={(e) => pushHash(formatHash("/reports/net-worth", { currency: e.target.value, asOf }))}
-          >
-            {enabled.map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div role="group" aria-label={t("rep_convertTo")} className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-slate-600">{t("rep_convertTo")}</span>
+          {enabled.map((code) => (
+            <button
+              type="button"
+              key={code}
+              aria-label={currencyRoleName(t("rep_convertTo"), code)}
+              aria-pressed={code === currency}
+              className={currencyChipClass(code === currency)}
+              onClick={() => pushHash(formatHash("/reports/net-worth", { currency: code, asOf }))}
+            >
+              {code}
+            </button>
+          ))}
+        </div>
         <label className="flex items-center gap-2 text-sm text-slate-500">
           <span>{t("rep_asOf", { date: asOf })}</span>
           <input

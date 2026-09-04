@@ -244,8 +244,11 @@ export const api = {
     currency: string,
     expectedRevision?: number,
   ) => req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify({ ...body, expectedRevision }) }),
-  clearGoal: (categoryId: string, currency: string) =>
-    req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, { method: "PUT", body: JSON.stringify({ type: null }) }),
+  clearGoal: (categoryId: string, currency: string, expectedRevision?: number) =>
+    req<{ ok: true }>(`/api/goals/${categoryId}?currency=${encodeURIComponent(currency)}`, {
+      method: "PUT",
+      body: JSON.stringify({ type: null, expectedRevision }),
+    }),
 
   reports: (months = 12, currency: string) =>
     req<ReportsData>(`/api/reports/overview?months=${months}&currency=${encodeURIComponent(currency)}`),

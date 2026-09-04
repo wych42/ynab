@@ -101,11 +101,14 @@ import { createInvestmentModule, isInvestmentError } from "./investment.mjs";
 import { loadDemoData } from "./demo.mjs";
 import {
   isBudgetRevisionError,
+  isExpectedRevisionRequiredError,
+  parsePageExpectedRevision,
   readCategoryRevision,
   readLedgerRevision,
   runBudgetWrite,
   runCategoryWrite,
   bumpLedgerRevision,
+  EXPECTED_REVISION_REQUIRED,
 } from "./budget-revision.mjs";
 
 export const api = express.Router();
@@ -129,7 +132,14 @@ function sendRevisionError(res, error, { month, currencyCode } = {}) {
   return true;
 }
 
+function sendExpectedRevisionRequired(res, error) {
+  if (!isExpectedRevisionRequiredError(error)) return false;
+  res.status(400).json({ error: EXPECTED_REVISION_REQUIRED, code: EXPECTED_REVISION_REQUIRED });
+  return true;
+}
+
 function sendAccountCurrencyError(res, error, ctx) {
+  if (sendExpectedRevisionRequired(res, error)) return;
   if (sendRevisionError(res, error, ctx)) return;
   if (isAccountCurrencyError(error) || isFinanceToolError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
@@ -138,6 +148,7 @@ function sendAccountCurrencyError(res, error, ctx) {
 }
 
 function sendLedgerError(res, error, ctx) {
+  if (sendExpectedRevisionRequired(res, error)) return;
   if (sendRevisionError(res, error, ctx)) return;
   if (isCurrencyLedgerError(error) || isAccountCurrencyError(error)) {
     return res.status(400).json({ error: error.code, code: error.code, message: error.message });
@@ -762,6 +773,7 @@ api.get("/budget/:month", (req, res) => {
 api.put("/budget/:month/category/:categoryId/assign", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const { month, categoryId } = req.params;
     const cents = Math.round(Number(req.body?.assigned));
     if (!Number.isFinite(cents) || cents < 0) return bad(res, "invalid amount");
@@ -770,7 +782,7 @@ api.put("/budget/:month/category/:categoryId/assign", (req, res) => {
       month,
       categoryId,
       assignedMinor: cents,
-      expectedRevision: req.body?.expectedRevision,
+      expectedRevision,
     });
     res.json(budgetPayload(month, currencyCode));
   } catch (e) {
@@ -781,12 +793,13 @@ api.put("/budget/:month/category/:categoryId/assign", (req, res) => {
 api.post("/budget/:month/move", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const { month } = req.params;
     const { fromId, toId, amount } = req.body || {};
     const cents = Math.round(Number(amount));
     if (!fromId || !toId || fromId === toId) return bad(res, "select different categories");
     if (!Number.isFinite(cents) || cents <= 0) return bad(res, "invalid amount");
-    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+    runBudgetWrite(db, [currencyCode], expectedRevision, () => {
       adjustAssignment(db, month, fromId, -cents, currencyCode);
       adjustAssignment(db, month, toId, cents, currencyCode);
     });
@@ -799,6 +812,7 @@ api.post("/budget/:month/move", (req, res) => {
 api.post("/budget/:month/cover", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const { month } = req.params;
     const { categoryId, fromId } = req.body || {};
     assertAssignmentTarget(db, categoryId, currencyCode);
@@ -813,7 +827,7 @@ api.post("/budget/:month/cover", (req, res) => {
       amount = Math.min(overspent, Math.max(donor.available, 0));
       if (amount <= 0) return bad(res, "donor has no available funds");
     }
-    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+    runBudgetWrite(db, [currencyCode], expectedRevision, () => {
       if (fromId !== "rta") adjustAssignment(db, month, fromId, -amount, currencyCode);
       adjustAssignment(db, month, categoryId, amount, currencyCode);
     });
@@ -826,13 +840,14 @@ api.post("/budget/:month/cover", (req, res) => {
 api.post("/budget/:month/copy-previous", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const { month } = req.params;
     if (!/^\d{4}-\d{2}$/.test(month)) return bad(res, "bad month");
     const prev = addMonths(month, -1);
     const rows = db
       .prepare("SELECT category_id, assigned FROM assignments WHERE month=? AND currency_code=?")
       .all(prev, currencyCode);
-    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+    runBudgetWrite(db, [currencyCode], expectedRevision, () => {
       if (rows.length > 0) {
         db.prepare("DELETE FROM assignments WHERE month=? AND currency_code=?").run(month, currencyCode);
         const ins = db.prepare("INSERT INTO assignments(currency_code,month,category_id,assigned) VALUES(?,?,?,?)");
@@ -848,6 +863,7 @@ api.post("/budget/:month/copy-previous", (req, res) => {
 api.post("/budget/:month/auto-assign", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const { month } = req.params;
     const p = budgetPayload(month, currencyCode);
     const rta = p.readyToAssign;
@@ -855,7 +871,7 @@ api.post("/budget/:month/auto-assign", (req, res) => {
     const flat = p.groups.flatMap((g) => g.categories.map((c) => ({ ...c, groupId: g.id })));
     const ccCats = flat.filter((c) => c.available < 0 && c.id.startsWith("cc:"));
     const withGoals = flat.filter((c) => !c.id.startsWith("cc:") && c.goal && c.need && c.need.need > 0);
-    runBudgetWrite(db, [currencyCode], req.body?.expectedRevision, () => {
+    runBudgetWrite(db, [currencyCode], expectedRevision, () => {
       let remaining = rta;
       for (const c of ccCats) {
         if (remaining <= 0) break;
@@ -1226,18 +1242,19 @@ api.delete("/categories/:id", (req, res) => {
 api.put("/goals/:categoryId", (req, res) => {
   try {
     const currencyCode = requestCurrency(req);
+    const expectedRevision = parsePageExpectedRevision(req.body?.expectedRevision);
     const c = db.prepare("SELECT * FROM categories WHERE id=?").get(req.params.categoryId);
     if (!c) return bad(res, "not found");
     const { type, target, targetMonth } = req.body || {};
     if (type == null) {
-      setGoal(db, { currencyCode, categoryId: c.id, type: null, expectedRevision: req.body?.expectedRevision });
+      setGoal(db, { currencyCode, categoryId: c.id, type: null, expectedRevision });
       return res.json({ ok: true, currencyCode, revision: readLedgerRevision(db, currencyCode) });
     }
     if (!["monthly", "targetBalance", "targetByDate"].includes(type)) return bad(res, "invalid type");
     const cents = Math.max(Math.round(Number(target) || 0), 0);
     setGoal(db, {
       currencyCode,
-      expectedRevision: req.body?.expectedRevision,
+      expectedRevision,
       categoryId: c.id,
       type,
       targetMinor: cents,

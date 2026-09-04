@@ -87,6 +87,62 @@ describe("budget writes use expectedRevision", () => {
   });
 });
 
+describe("page budget writes require expectedRevision", () => {
+  const pageWrites = () => [
+    ["PUT", `/api/budget/${MONTH}/category/${categoryId}/assign?currency=CNY`, { assigned: 1 }],
+    ["POST", `/api/budget/${MONTH}/move?currency=CNY`, { fromId: categoryId, toId: categoryId, amount: 1 }],
+    ["POST", `/api/budget/${MONTH}/cover?currency=CNY`, { categoryId, fromId: "rta" }],
+    ["POST", `/api/budget/${MONTH}/copy-previous?currency=CNY`, {}],
+    ["POST", `/api/budget/${MONTH}/auto-assign?currency=CNY`, {}],
+    ["PUT", `/api/goals/${categoryId}?currency=CNY`, { type: "monthly", target: 100 }],
+    ["PUT", `/api/goals/${categoryId}?currency=CNY`, { type: null }],
+  ];
+
+  it("rejects each page write path when expectedRevision is missing", async () => {
+    const assignedBefore = db
+      .prepare("SELECT assigned FROM assignments WHERE currency_code='CNY' AND month=? AND category_id=?")
+      .get(MONTH, categoryId)?.assigned;
+    for (const [method, url, body] of pageWrites()) {
+      const result = await call(method, url, body);
+      expect(result.status).toBe(400);
+      expect(result.json).toMatchObject({ error: "expected_revision_required", code: "expected_revision_required" });
+    }
+    expect(
+      db
+        .prepare("SELECT assigned FROM assignments WHERE currency_code='CNY' AND month=? AND category_id=?")
+        .get(MONTH, categoryId)?.assigned
+    ).toBe(assignedBefore);
+  });
+
+  it("rejects stale copy, auto-assign, move, cover, setGoal and clearGoal with 409", async () => {
+    const boot = await call("GET", `/api/budget/${MONTH}?currency=CNY`);
+    const expectedRevision = boot.json.revision;
+    const first = await call("PUT", `/api/budget/${MONTH}/category/${categoryId}/assign?currency=CNY`, {
+      assigned: 1800,
+      expectedRevision,
+    });
+    expect(first.status).toBe(200);
+    const stale = expectedRevision;
+    const other = boot.json.groups
+      .flatMap((group) => group.categories)
+      .find((cat) => cat.id !== categoryId && !cat.id.startsWith("cc:"));
+    expect(other?.id).toBeTruthy();
+    const writes = [
+      ["POST", `/api/budget/${MONTH}/copy-previous?currency=CNY`, {}],
+      ["POST", `/api/budget/${MONTH}/auto-assign?currency=CNY`, {}],
+      ["POST", `/api/budget/${MONTH}/move?currency=CNY`, { fromId: categoryId, toId: other.id, amount: 1 }],
+      ["PUT", `/api/goals/${categoryId}?currency=CNY`, { type: "monthly", target: 100 }],
+      ["PUT", `/api/goals/${categoryId}?currency=CNY`, { type: null }],
+    ];
+    for (const [method, url, body] of writes) {
+      const result = await call(method, url, { ...body, expectedRevision: stale });
+      expect(result.status).toBe(409);
+      expect(result.json.code).toBe("budget_revision_conflict");
+    }
+    expect(assignedOf((await call("GET", `/api/budget/${MONTH}?currency=CNY`)).json, categoryId)).toBe(1800);
+  });
+});
+
 describe("cross-currency transfers bump both ledgers", () => {
   it("increments CNY and SGD revision together", async () => {
     const cnyBefore = ledgerRevision("CNY");
@@ -101,6 +157,23 @@ describe("cross-currency transfers bump both ledgers", () => {
     expect(posted.status).toBe(200);
     expect(ledgerRevision("CNY")).toBe(cnyBefore + 1);
     expect(ledgerRevision("SGD")).toBe(sgdBefore + 1);
+  });
+
+  it("does not treat a single number expectedRevision as a skip", async () => {
+    const cnyBefore = ledgerRevision("CNY");
+    const sgdBefore = ledgerRevision("SGD");
+    const posted = await call("POST", "/api/transfers", {
+      fromId: sgd,
+      toId: cny,
+      date: `${MONTH}-09`,
+      fromAmountMinor: 10_000,
+      toAmountMinor: 55_000,
+      expectedRevision: Math.max(cnyBefore, sgdBefore) + 1,
+    });
+    expect(posted.status).toBe(409);
+    expect(posted.json.code).toBe("budget_revision_conflict");
+    expect(ledgerRevision("CNY")).toBe(cnyBefore);
+    expect(ledgerRevision("SGD")).toBe(sgdBefore);
   });
 });
 

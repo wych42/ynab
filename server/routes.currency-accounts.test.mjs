@@ -373,11 +373,17 @@ describe("currency settings enable built-in ledgers and set reporting currency",
       categoryId,
     });
     expect(posted.status).toBe(200);
+    const budget = await call("GET", `/api/budget/${boot.json.currentMonth}?currency=CNY`);
     const assigned = await call("PUT", `/api/budget/${boot.json.currentMonth}/category/${categoryId}/assign?currency=CNY`, {
       assigned: 1500,
+      expectedRevision: budget.json.revision,
     });
     expect(assigned.status).toBe(200);
-    const goal = await call("PUT", `/api/goals/${categoryId}?currency=CNY`, { type: "monthly", target: 2600 });
+    const goal = await call("PUT", `/api/goals/${categoryId}?currency=CNY`, {
+      type: "monthly",
+      target: 2600,
+      expectedRevision: assigned.json.revision,
+    });
     expect(goal.status).toBe(200);
 
     const amountsBefore = snapshotFinancialAmounts(db);

@@ -304,7 +304,7 @@ describe("ReportsPage native and consolidated views", () => {
   it("changing 折算为 only changes the next netWorthReport reportingCurrency", async () => {
     await openNetWorth();
     await waitFor(() => expect(h.netWorthReport).toHaveBeenCalled());
-    fireEvent.change(screen.getByLabelText("rep_convertTo"), { target: { value: "SGD" } });
+    fireEvent.click(screen.getByRole("button", { name: "rep_convertTo：SGD" }));
     await waitFor(() =>
       expect(h.netWorthReport).toHaveBeenCalledWith(
         expect.objectContaining({ reportingCurrency: "SGD", asOf: "2026-09-04" }),
@@ -407,7 +407,7 @@ describe("ReportsPage native and consolidated views", () => {
 
     await openNetWorth();
     await waitFor(() => expect(h.pendingNetWorth.length).toBeGreaterThan(0));
-    fireEvent.change(screen.getByLabelText("rep_convertTo"), { target: { value: "USD" } });
+    fireEvent.click(screen.getByRole("button", { name: "rep_convertTo：USD" }));
     await waitFor(() => {
       expect(screen.getAllByText(formatMoney(88, "USD", { locale: "zh-CN" })).length).toBeGreaterThan(0);
     });
@@ -419,5 +419,15 @@ describe("ReportsPage native and consolidated views", () => {
     });
     expect(screen.queryByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }))).toBeNull();
     expect(screen.queryByText(formatMoney(20_400_000, "CNY", { locale: "zh-CN" }))).toBeNull();
+  });
+
+  it("selected 折算为 chip has aria-pressed and a role name, not a bare CNY", async () => {
+    await openNetWorth();
+    await waitFor(() => expect(h.netWorthReport).toHaveBeenCalled());
+    const selected = screen.getByRole("button", { name: "rep_convertTo：CNY" });
+    expect(selected.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "rep_convertTo：SGD" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: /^CNY$/ })).toBeNull();
+    expect(screen.queryByRole("option", { name: /^CNY$/ })).toBeNull();
   });
 });

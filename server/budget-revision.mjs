@@ -1,6 +1,7 @@
 export const CATEGORY_REVISION_KEY = "category_revision";
 export const BUDGET_REVISION_CONFLICT = "budget_revision_conflict";
 export const CATEGORY_REVISION_CONFLICT = "category_revision_conflict";
+export const EXPECTED_REVISION_REQUIRED = "expected_revision_required";
 
 export class BudgetRevisionError extends Error {
   constructor(code, message, extra = {}) {
@@ -45,6 +46,20 @@ export function bumpCategoryRevision(database) {
   return next;
 }
 
+export function parsePageExpectedRevision(expectedRevision) {
+  if (typeof expectedRevision !== "number" || !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    const error = new Error("expectedRevision is required");
+    error.code = EXPECTED_REVISION_REQUIRED;
+    error.status = 400;
+    throw error;
+  }
+  return expectedRevision;
+}
+
+export function isExpectedRevisionRequiredError(error) {
+  return error?.code === EXPECTED_REVISION_REQUIRED;
+}
+
 export function assertLedgerRevision(database, currencyCode, expectedRevision) {
   const current = readLedgerRevision(database, currencyCode);
   if (expectedRevision == null) return current;
@@ -74,13 +89,9 @@ export function bumpLedgerRevisions(database, currencyCodes) {
 
 export function applyLedgerRevisionGuard(database, currencyCodes, expectedRevision) {
   const codes = uniqueCodes(currencyCodes);
+  const isMap = expectedRevision && typeof expectedRevision === "object" && !Array.isArray(expectedRevision);
   for (const code of codes) {
-    const expected =
-      expectedRevision && typeof expectedRevision === "object" && !Array.isArray(expectedRevision)
-        ? expectedRevision[code]
-        : codes.length === 1
-          ? expectedRevision
-          : undefined;
+    const expected = isMap ? expectedRevision[code] : expectedRevision;
     assertLedgerRevision(database, code, expected);
   }
 }

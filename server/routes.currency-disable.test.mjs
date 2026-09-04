@@ -87,8 +87,10 @@ describe("PUT /api/settings disableCurrency", () => {
     const enable = await call("PUT", "/api/settings", { enableCurrency: "GBP" });
     expect(enable.status).toBe(200);
     const categoryId = spendCategoryId();
+    const gbpBudget = await call("GET", "/api/budget/2026-09?currency=GBP");
     const assigned = await call("PUT", `/api/budget/2026-09/category/${categoryId}/assign?currency=GBP`, {
       assigned: 1500,
+      expectedRevision: gbpBudget.json.revision,
     });
     expect(assigned.status).toBe(200);
 
@@ -96,7 +98,11 @@ describe("PUT /api/settings disableCurrency", () => {
     expect(ledgerCodes()).toContain("GBP");
 
     db.prepare("DELETE FROM assignments WHERE currency_code='GBP'").run();
-    const goal = await call("PUT", `/api/goals/${categoryId}?currency=GBP`, { type: "monthly", target: 2600 });
+    const goal = await call("PUT", `/api/goals/${categoryId}?currency=GBP`, {
+      type: "monthly",
+      target: 2600,
+      expectedRevision: assigned.json.revision,
+    });
     expect(goal.status).toBe(200);
 
     expectCurrencyError(await call("PUT", "/api/settings", { disableCurrency: "GBP" }), "currency_in_use");

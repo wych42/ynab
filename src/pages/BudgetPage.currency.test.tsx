@@ -26,6 +26,7 @@ function budgetData(month: string, currencyCode: string, readyToAssign: number, 
     overspentTotal: 0,
     uncategorizedCount: 0,
     ageOfMoney: 12,
+    revision: 4,
     groups: [
       {
         id: "g1",
@@ -259,7 +260,7 @@ describe("BudgetPage 按 URL 币种请求并展示", () => {
     const input = await screen.findByDisplayValue("500.00");
     fireEvent.change(input, { target: { value: "12.34" } });
     fireEvent.blur(input);
-    await waitFor(() => expect(h.assign).toHaveBeenCalledWith("2026-08", "cat-1", 1234, "CNY", undefined));
+    await waitFor(() => expect(h.assign).toHaveBeenCalledWith("2026-08", "cat-1", 1234, "CNY", 4));
   });
 
   it("日元分配没有小数输入和展示", async () => {
