@@ -1,3 +1,5 @@
+// Storage helpers for the bare `#/budget` URL only.
+// They are not page current state and must not be applied on bootstrap.
 export const ACTIVE_BUDGET_CURRENCY_KEY = "activeBudgetCurrency";
 
 export function resolveActiveBudgetCurrency(

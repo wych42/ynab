@@ -12,17 +12,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { CurrencyMigrationPage } from "./pages/CurrencyMigrationPage";
 import { Spinner } from "./components/ui";
-
-function useHashRoute(): string {
-  const [route, setRoute] = useState(() => window.location.hash || "#/budget");
-  useEffect(() => {
-    const h = () => setRoute(window.location.hash || "#/budget");
-    window.addEventListener("hashchange", h);
-    if (!window.location.hash) window.location.hash = "#/budget";
-    return () => window.removeEventListener("hashchange", h);
-  }, []);
-  return route;
-}
+import { useHashRoute } from "./hashRoute";
 
 function Shell() {
   const route = useHashRoute();

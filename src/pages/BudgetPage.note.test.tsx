@@ -38,10 +38,25 @@ const h = vi.hoisted(() => {
   });
   const boot = {
     settings: { currencySymbol: "¥", language: "zh", aiBaseUrl: "", aiModel: "", aiKey: "" },
-    accounts: [],
+    accounts: [
+      {
+        id: "acc-1",
+        name: "现金钱包",
+        type: "cash",
+        on_budget: 1,
+        closed: 0,
+        starting_balance: 10000,
+        starting_balance_date: null,
+        sort_order: 0,
+        created_at: "",
+        balance: 10000,
+        currencyCode: "CNY",
+      },
+    ],
     payees: [],
     groups: [],
     currentMonth: "2026-02",
+    enabledCurrencies: ["CNY", "USD", "SGD", "EUR", "JPY"],
   };
   const updateCategory = vi.fn().mockResolvedValue({ ok: true });
   return { budgetData, boot, updateCategory };
@@ -68,8 +83,6 @@ vi.mock("../store", () => {
     toast,
     setLang: vi.fn(),
     refreshBoot: vi.fn().mockResolvedValue({}),
-    activeCurrency: "CNY",
-    setActiveCurrency: vi.fn(),
   });
   return { useApp };
 });
@@ -89,6 +102,7 @@ describe("BudgetPage Inspector 备注维护", () => {
   afterEach(cleanup);
   beforeEach(() => {
     localStorage.clear();
+    window.location.hash = "#/budget?currency=CNY";
     h.updateCategory.mockClear();
   });
 

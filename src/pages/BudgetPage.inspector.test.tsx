@@ -49,11 +49,13 @@ const h = vi.hoisted(() => {
         sort_order: 0,
         created_at: "",
         balance: 10000,
+        currencyCode: "CNY",
       },
     ],
     payees: [],
     groups: [],
     currentMonth: "2026-02",
+    enabledCurrencies: ["CNY", "USD", "SGD", "EUR", "JPY"],
   };
   return { budgetData, boot };
 });
@@ -81,8 +83,6 @@ vi.mock("../store", () => {
     toast,
     setLang,
     refreshBoot,
-    activeCurrency: "CNY",
-    setActiveCurrency: vi.fn(),
   });
   return { useApp };
 });
@@ -101,6 +101,7 @@ describe("BudgetPage Inspector responsive layout", () => {
   afterEach(cleanup);
   beforeEach(() => {
     localStorage.clear();
+    window.location.hash = "#/budget?currency=CNY";
   });
 
   it("opens the inspector as a slide-over drawer with a backdrop when a category is selected", async () => {

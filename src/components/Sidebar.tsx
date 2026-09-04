@@ -17,6 +17,7 @@ import { useRef, useState } from "react";
 import type { ComponentType } from "react";
 import { useApp } from "../store";
 import { formatAccountMoney, totalsByCurrency } from "../format";
+import { readStoredBudgetCurrency } from "../activeCurrency";
 import type { Account } from "../types";
 import type { Lang } from "../i18n";
 
@@ -146,12 +147,15 @@ export function Sidebar({
   open?: boolean;
   onNavigate?: () => void;
 }) {
-  const { boot, t, lang, setLang, activeCurrency, setActiveCurrency } = useApp();
+  const { boot, t, lang, setLang } = useApp();
 
   const accs = boot?.accounts ?? [];
   const onBudget = accs.filter((a) => !a.closed && a.on_budget);
   const tracking = accs.filter((a) => !a.closed && !a.on_budget);
   const closed = accs.filter((a) => a.closed);
+  const storedLedger = readStoredBudgetCurrency();
+  const lastLedger = storedLedger && (boot?.enabledCurrencies ?? []).includes(storedLedger) ? storedLedger : null;
+  const budgetHref = lastLedger ? `#/budget?currency=${encodeURIComponent(lastLedger)}` : "#/budget";
 
   return (
     <aside
@@ -171,7 +175,7 @@ export function Sidebar({
 
       <nav className="mb-6 space-y-1 px-3">
         {[
-          { href: "#/budget", icon: Wallet, label: t("nav_budget"), active: route.startsWith("#/budget") },
+          { href: budgetHref, icon: Wallet, label: t("nav_budget"), active: route.startsWith("#/budget") },
           { href: "#/accounts", icon: Landmark, label: t("nav_accounts"), active: route.startsWith("#/accounts") },
           { href: "#/transactions", icon: ListChecks, label: t("nav_transactions"), active: route.startsWith("#/transactions") },
           { href: "#/reports", icon: TrendingUp, label: t("nav_reports"), active: route.startsWith("#/reports") },
@@ -215,22 +219,6 @@ export function Sidebar({
               </button>
             ))}
           </div>
-          <label className="sr-only" htmlFor="sidebar-budget-currency">
-            {t("sidebar_budgetCurrency")}
-          </label>
-          <select
-            id="sidebar-budget-currency"
-            aria-label={t("sidebar_budgetCurrency")}
-            value={activeCurrency ?? ""}
-            onChange={(e) => setActiveCurrency(e.target.value)}
-            className="rounded-md border border-white/10 bg-navy-900 px-2 py-1 text-xs text-slate-200 outline-none hover:border-white/20 focus:border-brand-400"
-          >
-            {(boot?.enabledCurrencies ?? []).map((code) => (
-              <option key={code} value={code}>
-                {code}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
     </aside>

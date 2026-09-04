@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -21,6 +21,10 @@ import { fmtMoney, fmtMoneyShort, fmtMonth, fmtMonthShort, formatMinorInput, loc
 import { parseAmountToMinor } from "../money";
 import type { BudCategory, BudGroup, BudgetData } from "../types";
 import { Btn, Field, Modal, Spinner, inputCls } from "../components/ui";
+import { completeBudgetHash, formatHash, parseHash, pushHash, useHashRoute } from "../hashRoute";
+import { persistBudgetCurrency, readStoredBudgetCurrency } from "../activeCurrency";
+
+const BudgetCurrencyContext = createContext("");
 
 function useCollapsedGroups() {
   const [collapsed, setCollapsed] = useState<string[]>(() => {
@@ -50,10 +54,12 @@ const GRID =
 const MONTH_GRID = "grid grid-cols-[92px_76px_100px] items-center gap-x-2";
 
 export function BudgetPage() {
-  const { boot, t, lang, refreshBoot, toast, activeCurrency } = useApp();
+  const { boot, t, lang, refreshBoot, toast } = useApp();
+  const route = useHashRoute();
   const [base, setBase] = useState<string>("");
   const [win, setWin] = useState<{ months: string[]; data: Record<string, BudgetData> } | null>(null);
   const currencyRef = useRef<string | null>(null);
+  const urlCurrency = parseHash(route).query.currency ?? null;
   const [sel, setSel] = useState<Selection>(null);
   const [editing, setEditing] = useState<{ catId: string; month: string; value: string } | null>(null);
   const [moveOpen, setMoveOpen] = useState(false);
@@ -84,15 +90,34 @@ export function BudgetPage() {
   }, []);
 
   useEffect(() => {
-    currencyRef.current = activeCurrency;
+    if (!boot) return;
+    const result = completeBudgetHash({
+      enabledCurrencies: boot.enabledCurrencies,
+      reportingCurrency: boot.settings.reportingCurrency,
+      storedCurrency: readStoredBudgetCurrency(),
+    });
+    if (result.currency) persistBudgetCurrency(result.currency);
+  }, [boot, route]);
+
+  const switchCurrency = (code: string) => {
+    persistBudgetCurrency(code);
+    const parsed = parseHash(window.location.hash);
+    pushHash(formatHash("/budget", { ...parsed.query, currency: code }));
+  };
+
+  useEffect(() => {
+    currencyRef.current = urlCurrency;
     setWin(null);
     setSel(null);
     setEditing(null);
-  }, [activeCurrency]);
+  }, [urlCurrency]);
 
   useEffect(() => {
-    if (base && activeCurrency) load(base, activeCurrency).catch(() => toast(t("common_error"), "err"));
-  }, [base, activeCurrency, load, t, toast]);
+    if (!base || !urlCurrency) return;
+    const hasOnBudget = boot?.accounts.some((a) => !a.closed && a.on_budget && a.currencyCode === urlCurrency);
+    if (boot && boot.accounts.length > 0 && !hasOnBudget) return;
+    load(base, urlCurrency).catch(() => toast(t("common_error"), "err"));
+  }, [base, urlCurrency, boot, load, t, toast]);
 
   useEffect(() => {
     const h = () => setGroupMenu(null);
@@ -118,9 +143,31 @@ export function BudgetPage() {
     stripRef.current?.querySelector(`[data-m="${base}"]`)?.scrollIntoView({ inline: "center", block: "nearest" });
   }, [base, loaded]);
 
-  if (!boot || !activeCurrency || !loaded || !win) return <Spinner />;
-  const currency = activeCurrency;
-  if (curHasMismatch(win, base, currency)) return <Spinner />;
+  if (!boot) return <Spinner />;
+  const currency = urlCurrency;
+  if (!currency) return <Spinner />;
+
+  const hasOnBudget = boot.accounts.some((a) => !a.closed && a.on_budget && a.currencyCode === currency);
+  if (boot.accounts.length > 0 && !hasOnBudget) {
+    return (
+      <EmptyCurrencyLedger
+        currency={currency}
+        enabled={boot.enabledCurrencies}
+        onSwitch={switchCurrency}
+      />
+    );
+  }
+
+  if (!loaded || !win || curHasMismatch(win, base, currency)) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-6">
+          <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
+        </div>
+        <Spinner />
+      </div>
+    );
+  }
 
   const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
   const moneyShort = (amount: number) => fmtMoneyShort(amount, { currencyCode: currency, locale: localeForLang(lang) });
@@ -179,14 +226,13 @@ export function BudgetPage() {
   if (emptyStart) return <EmptyStart />;
 
   return (
+    <BudgetCurrencyContext.Provider value={currency}>
     <div className="flex h-full">
       <div className="flex h-full min-w-[1060px] flex-1 flex-col">
         {/* Header */}
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 pb-2 pt-3 md:px-6">
-            <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold tracking-wide text-slate-600">
-              {t("budget_currency")} <span>{currency}</span>
-            </span>
+            <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
             <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1">
               <button
                 onClick={() => canPrev && setBase(shiftMonth(base, -1))}
@@ -493,12 +539,13 @@ export function BudgetPage() {
         />
       )}
     </div>
+    </BudgetCurrencyContext.Provider>
   );
 }
 
 function useBudgetMoney() {
-  const { lang, activeCurrency } = useApp();
-  const currency = activeCurrency ?? "";
+  const { lang } = useApp();
+  const currency = useContext(BudgetCurrencyContext);
   const locale = localeForLang(lang);
   return {
     currency,
@@ -1399,6 +1446,67 @@ function RenameModal({ name: init, onClose, onSave }: { kind: string; name: stri
         {t("common_save")}
       </Btn>
     </Modal>
+  );
+}
+
+function BudgetLedgerSelect({
+  currency,
+  enabled,
+  onChange,
+}: {
+  currency: string;
+  enabled: string[];
+  onChange: (code: string) => void;
+}) {
+  const { t } = useApp();
+  return (
+    <label className="flex items-center gap-2 rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold tracking-wide text-slate-600">
+      <span>{t("budget_currency")}</span>
+      <select
+        id="budget-ledger-currency"
+        aria-label={t("budget_currency")}
+        value={currency}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand-400"
+      >
+        {enabled.map((code) => (
+          <option key={code} value={code}>
+            {code}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function EmptyCurrencyLedger({
+  currency,
+  enabled,
+  onSwitch,
+}: {
+  currency: string;
+  enabled: string[];
+  onSwitch: (code: string) => void;
+}) {
+  const { t } = useApp();
+  return (
+    <div className="flex h-full items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 p-8">
+      <div className="anim-pop max-w-lg text-center">
+        <h1 className="text-2xl font-bold text-slate-900">{t("budget_emptyLedger", { code: currency })}</h1>
+        <div className="mt-8 flex flex-col items-center gap-4">
+          <a
+            href="#/accounts"
+            className="inline-flex items-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500"
+          >
+            {t("budget_createCurrencyAccount", { code: currency })}
+          </a>
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-sm font-medium text-slate-500">{t("budget_switchLedger")}</span>
+            <BudgetLedgerSelect currency={currency} enabled={enabled} onChange={onSwitch} />
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

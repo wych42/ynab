@@ -43,8 +43,18 @@ function todayYmd(timeZone?: string | null) {
   return new Date().toISOString().slice(0, 10);
 }
 
+type AppWithLegacyCurrency = ReturnType<typeof useApp> & { activeCurrency?: string | null };
+
+function nativeViewCurrency(app: ReturnType<typeof useApp>): string | null {
+  const legacy = (app as AppWithLegacyCurrency).activeCurrency;
+  if (legacy) return legacy;
+  return app.boot?.settings.reportingCurrency ?? app.boot?.enabledCurrencies[0] ?? null;
+}
+
 export function ReportsPage() {
-  const { lang, t, activeCurrency, boot } = useApp();
+  const app = useApp();
+  const { lang, t, boot } = app;
+  const activeCurrency = nativeViewCurrency(app);
   const [view, setView] = useState<ReportView>("native");
   const [nativeData, setNativeData] = useState<ReportsData | null>(null);
   const [netWorthData, setNetWorthData] = useState<NetWorthReport | null>(null);

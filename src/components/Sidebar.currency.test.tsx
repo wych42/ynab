@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { Account } from "../types";
 import { formatMoney } from "../money";
 
 const h = vi.hoisted(() => ({
   accounts: [] as Account[],
-  activeCurrency: "CNY",
-  setActiveCurrency: vi.fn(),
-  saveSettings: vi.fn(),
+  setLang: vi.fn(),
 }));
 
 vi.mock("../store", () => ({
@@ -20,24 +18,16 @@ vi.mock("../store", () => ({
     },
     t: (k: string) => k,
     lang: "zh",
-    setLang: vi.fn(),
-    activeCurrency: h.activeCurrency,
-    setActiveCurrency: h.setActiveCurrency,
+    setLang: h.setLang,
   }),
-}));
-
-vi.mock("../api", () => ({
-  api: {
-    saveSettings: (...args: unknown[]) => h.saveSettings(...args),
-  },
 }));
 
 import { Sidebar } from "./Sidebar";
 
 beforeEach(() => {
-  h.activeCurrency = "CNY";
-  h.setActiveCurrency.mockReset();
-  h.saveSettings.mockReset();
+  h.accounts = [];
+  h.setLang.mockReset();
+  localStorage.clear();
 });
 
 afterEach(cleanup);
@@ -84,16 +74,20 @@ describe("Sidebar 账户行按账户币种格式化", () => {
   });
 });
 
-describe("Sidebar 币种账本切换器", () => {
-  it("用已启用币种选择器替换旧的符号编辑，切换时不保存 currencySymbol", () => {
-    h.accounts = [];
+describe("Sidebar 不再提供全局币种选择器", () => {
+  it("没有 sidebar_budgetCurrency，语言切换仍在", () => {
     render(<Sidebar route="#/budget" open />);
 
-    const selector = screen.getByLabelText("sidebar_budgetCurrency") as HTMLSelectElement;
-    expect(selector.value).toBe("CNY");
-    expect(screen.queryByRole("textbox")).toBeNull();
-    fireEvent.change(selector, { target: { value: "SGD" } });
-    expect(h.setActiveCurrency).toHaveBeenCalledWith("SGD");
-    expect(h.saveSettings).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("sidebar_budgetCurrency")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByText("中文")).toBeTruthy();
+    expect(screen.getByText("EN")).toBeTruthy();
+  });
+
+  it("预算导航可以带最近账本查询，点击本身不切换账本", () => {
+    localStorage.setItem("activeBudgetCurrency", "SGD");
+    render(<Sidebar route="#/accounts" open />);
+    const budget = screen.getByRole("link", { name: "nav_budget" });
+    expect(budget.getAttribute("href")).toBe("#/budget?currency=SGD");
   });
 });
