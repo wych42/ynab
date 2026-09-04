@@ -122,17 +122,24 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("SettingsPage FX section", () => {
-  it("shows the default provider, latest cache date and source, and cached rates", async () => {
+  it("hides internal FX source codes from the default area", async () => {
     render(<SettingsPage />);
     const section = await screen.findByTestId("fx-section");
-    expect(within(section).getByTestId("fx-provider").textContent).toContain("frankfurter_ecb");
+    expect(within(section).queryByText("frankfurter_ecb")).toBeNull();
+    expect(within(section).queryByText("manual")).toBeNull();
     expect(within(section).getByTestId("fx-latest-date").textContent).toContain("2026-08-28");
-    expect(within(section).getByTestId("fx-latest-source").textContent).toContain("frankfurter_ecb");
-    const list = within(section).getByTestId("fx-cache-list");
-    expect(list.textContent).toContain("USD");
-    expect(list.textContent).toContain("CNY");
-    expect(list.textContent).toContain("7.20");
+    expect(within(section).getByTestId("fx-provider").textContent).toContain("欧洲央行参考汇率");
+    expect(screen.queryByTestId("fx-cache-list")).toBeNull();
     expect(section.textContent).toContain("settings_fxHint");
+  });
+
+  it("keeps internal source codes in diagnostics after expand", async () => {
+    render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "settings_fxDiagnostics" }));
+    const list = await screen.findByTestId("fx-cache-list");
+    expect(list.textContent).toContain("frankfurter_ecb");
+    expect(list.textContent).toContain("USD");
+    expect(list.textContent).toContain("7.20");
   });
 
   it("only offers enabled currencies for a manual rate", async () => {
@@ -159,6 +166,7 @@ describe("SettingsPage FX section", () => {
   it("deletes a manual override from the cache list", async () => {
     h.getFxStatus.mockResolvedValue(fxStatus({ latestSource: "manual", rates: [manualRate, cachedRate] }));
     render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "settings_fxDiagnostics" }));
     const del = await screen.findByRole("button", { name: "settings_fxDeleteManual USD/CNY 2026-08-28" });
     fireEvent.click(del);
     await waitFor(() => expect(h.deleteFxRate).toHaveBeenCalledWith("2026-08-28", "USD", "CNY"));
@@ -168,6 +176,7 @@ describe("SettingsPage FX section", () => {
     const err = Object.assign(new Error("offline"), { code: "fx_provider_timeout" });
     h.syncFxRates.mockRejectedValue(err);
     render(<SettingsPage />);
+    fireEvent.click(await screen.findByRole("button", { name: "settings_fxDiagnostics" }));
     expect(await screen.findByTestId("fx-cache-list")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "settings_fxRefresh" }));
     expect(await screen.findByTestId("fx-refresh-error")).toBeTruthy();

@@ -211,6 +211,58 @@ export interface ReportsData {
   ageOfMoney: number;
 }
 
+export type CashflowCurrencySummary = {
+  currencyCode: string;
+  incomeMinor: number;
+  expenseMinor: number;
+  netInflowMinor: number;
+  active: boolean;
+};
+
+export type CashflowOverview = {
+  month: string;
+  currencies: CashflowCurrencySummary[];
+};
+
+export type CashflowDetail = {
+  currencyCode: string;
+  months: string[];
+  income: { month: string; value: number }[];
+  expense: { month: string; value: number }[];
+  breakdown: { name: string; value: number }[];
+  topPayees: { name: string; value: number }[];
+  incomeSources: { name: string; value: number }[];
+  ageOfMoney: number;
+};
+
+export type InvestmentListAccount = {
+  accountId: string;
+  name: string;
+  currencyCode: string;
+  balanceMinor: number;
+  balanceChangeMinor: number;
+  contributionsMinor: number;
+  withdrawalsMinor: number;
+  netContributionsMinor: number;
+  latestValuationDate: string | null;
+};
+
+export type InvestmentCurrencySubtotal = {
+  currencyCode: string;
+  balanceMinor: number;
+  balanceChangeMinor: number;
+  contributionsMinor: number;
+  withdrawalsMinor: number;
+  netContributionsMinor: number;
+};
+
+export type InvestmentList = {
+  asOf: string;
+  months: number;
+  accounts: InvestmentListAccount[];
+  subtotalsByCurrency: InvestmentCurrencySubtotal[];
+};
+
 export type NetWorthFxMeta = {
   from: string;
   to: string;

@@ -178,7 +178,7 @@ export function Sidebar({
           { href: budgetHref, icon: Wallet, label: t("nav_budget"), active: route.startsWith("#/budget") },
           { href: "#/accounts", icon: Landmark, label: t("nav_accounts"), active: route.startsWith("#/accounts") },
           { href: "#/transactions", icon: ListChecks, label: t("nav_transactions"), active: route.startsWith("#/transactions") },
-          { href: "#/reports", icon: TrendingUp, label: t("nav_reports"), active: route.startsWith("#/reports") },
+          { href: "#/reports/cashflow", icon: TrendingUp, label: t("nav_reports"), active: route.startsWith("#/reports") },
           { href: "#/chat", icon: Sparkles, label: t("nav_chat"), active: route.startsWith("#/chat") },
           { href: "#/settings", icon: Settings, label: t("nav_settings"), active: route.startsWith("#/settings") },
         ].map(({ href, icon: Icon, label, active }) => (

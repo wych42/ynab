@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
+import { displayFxSource } from "../format";
 import type { FxStatus, ImChannel, ImChannelType, Lang, WechatLoginState } from "../types";
 import { Btn, Modal, inputCls } from "../components/ui";
 
@@ -117,6 +118,7 @@ export function SettingsPage() {
   const [fxQuote, setFxQuote] = useState("");
   const [fxDate, setFxDate] = useState("");
   const [fxRate, setFxRate] = useState("");
+  const [fxDiagOpen, setFxDiagOpen] = useState(false);
 
   const loadFxStatus = useCallback(async () => {
     const status = await api.getFxStatus();
@@ -389,7 +391,7 @@ export function SettingsPage() {
             <div>
               <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxProvider")}</span>
               <p data-testid="fx-provider" className="text-sm font-medium text-slate-700">
-                {fxStatus?.defaultProvider ?? "—"}
+                {fxStatus?.defaultProvider ? displayFxSource(fxStatus.defaultProvider) : "—"}
               </p>
             </div>
             <div>
@@ -401,7 +403,7 @@ export function SettingsPage() {
             <div>
               <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxLatestSource")}</span>
               <p data-testid="fx-latest-source" className="text-sm font-medium text-slate-700">
-                {fxStatus?.latestSource ?? "—"}
+                {fxStatus?.latestSource ? displayFxSource(fxStatus.latestSource) : "—"}
               </p>
             </div>
             <Btn aria-label={t("settings_fxRefresh")} disabled={fxBusy} onClick={refreshFx}>
@@ -471,30 +473,41 @@ export function SettingsPage() {
               {t("settings_fxSaveManual")}
             </Btn>
           </div>
-          <div>
-            <p className="mb-2 text-xs font-medium text-slate-500">{t("settings_fxCached")}</p>
-            <ul data-testid="fx-cache-list" className="space-y-1.5">
-              {(fxStatus?.rates ?? []).map((row) => (
-                <li
-                  key={`${row.rateDate}-${row.baseCurrency}-${row.quoteCurrency}-${row.source}`}
-                  className="flex items-center gap-2 text-[12px] text-slate-600"
-                >
-                  <span className="min-w-0 flex-1">
-                    {row.baseCurrency}/{row.quoteCurrency} {row.rate} · {row.rateDate} · {row.source}
-                  </span>
-                  {row.source === "manual" && (
-                    <button
-                      type="button"
-                      className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
-                      aria-label={`${t("settings_fxDeleteManual")} ${row.baseCurrency}/${row.quoteCurrency} ${row.rateDate}`}
-                      onClick={() => deleteManualRate(row.rateDate, row.baseCurrency, row.quoteCurrency)}
+          <div className="border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-500 hover:text-slate-700"
+              onClick={() => setFxDiagOpen((open) => !open)}
+            >
+              {t("settings_fxDiagnostics")}
+            </button>
+            {fxDiagOpen && (
+              <>
+                <p className="mb-2 mt-3 text-xs font-medium text-slate-500">{t("settings_fxCached")}</p>
+                <ul data-testid="fx-cache-list" className="space-y-1.5">
+                  {(fxStatus?.rates ?? []).map((row) => (
+                    <li
+                      key={`${row.rateDate}-${row.baseCurrency}-${row.quoteCurrency}-${row.source}`}
+                      className="flex items-center gap-2 text-[12px] text-slate-600"
                     >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
+                      <span className="min-w-0 flex-1">
+                        {row.baseCurrency}/{row.quoteCurrency} {row.rate} · {row.rateDate} · {row.source}
+                      </span>
+                      {row.source === "manual" && (
+                        <button
+                          type="button"
+                          className="rounded-md p-1 text-slate-300 hover:bg-rose-50 hover:text-rose-500"
+                          aria-label={`${t("settings_fxDeleteManual")} ${row.baseCurrency}/${row.quoteCurrency} ${row.rateDate}`}
+                          onClick={() => deleteManualRate(row.rateDate, row.baseCurrency, row.quoteCurrency)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </div>
         </div>
       </Card>

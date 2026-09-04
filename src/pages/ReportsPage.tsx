@@ -17,13 +17,12 @@ import {
 import { Hourglass, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtMoney, fmtMonthShort, localeForLang } from "../format";
-import type { NetWorthReport, ReportsData } from "../types";
+import { displayFxRate, displayFxSource, fmtMoney, fmtMonthShort, localeForLang } from "../format";
+import { formatHash, parseHash, pushHash, replaceHash, useHashRoute } from "../hashRoute";
+import type { CashflowDetail, CashflowOverview, InvestmentList, NetWorthReport } from "../types";
 import { Spinner } from "../components/ui";
 
 const PALETTE = ["#6a63f0", "#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#8b5cf6", "#ec4899", "#84cc16", "#14b8a6", "#f97316"];
-
-type ReportView = "native" | "netWorth";
 
 function todayYmd(timeZone?: string | null) {
   try {
@@ -43,125 +42,325 @@ function todayYmd(timeZone?: string | null) {
   return new Date().toISOString().slice(0, 10);
 }
 
-type AppWithLegacyCurrency = ReturnType<typeof useApp> & { activeCurrency?: string | null };
-
-function nativeViewCurrency(app: ReturnType<typeof useApp>): string | null {
-  const legacy = (app as AppWithLegacyCurrency).activeCurrency;
-  if (legacy) return legacy;
-  return app.boot?.settings.reportingCurrency ?? app.boot?.enabledCurrencies[0] ?? null;
+function reportsSection(path: string): "cashflow" | "investments" | "net-worth" {
+  if (path.startsWith("/reports/investments")) return "investments";
+  if (path.startsWith("/reports/net-worth")) return "net-worth";
+  return "cashflow";
 }
 
 export function ReportsPage() {
-  const app = useApp();
-  const { lang, t, boot } = app;
-  const activeCurrency = nativeViewCurrency(app);
-  const [view, setView] = useState<ReportView>("native");
-  const [nativeData, setNativeData] = useState<ReportsData | null>(null);
-  const [netWorthData, setNetWorthData] = useState<NetWorthReport | null>(null);
-  const requestGen = useRef(0);
-  const reportingCurrency = boot?.settings.reportingCurrency ?? null;
-  const timezone = boot?.settings.timezone ?? null;
-
-  useEffect(() => {
-    const gen = ++requestGen.current;
-    setNativeData(null);
-    setNetWorthData(null);
-    if (view === "native") {
-      if (!activeCurrency) return;
-      const requested = activeCurrency;
-      api
-        .nativeReport(requested, 12)
-        .then((report) => {
-          if (requestGen.current !== gen) return;
-          if (report.currencyCode !== requested) return;
-          setNativeData(report);
-        })
-        .catch(() => {});
-      return;
-    }
-    if (!reportingCurrency) return;
-    const requested = reportingCurrency;
-    const asOf = todayYmd(timezone);
-    api
-      .netWorthReport({ reportingCurrency: requested, months: 12, asOf })
-      .then((report) => {
-        if (requestGen.current !== gen) return;
-        if (report.reportingCurrency !== requested) return;
-        setNetWorthData(report);
-      })
-      .catch(() => {});
-  }, [view, activeCurrency, reportingCurrency, timezone]);
-
-  const nativeReady = view === "native" && !!activeCurrency && !!nativeData && nativeData.currencyCode === activeCurrency;
-  const netWorthReady =
-    view === "netWorth" &&
-    !!reportingCurrency &&
-    !!netWorthData &&
-    netWorthData.reportingCurrency === reportingCurrency;
+  const { t } = useApp();
+  const route = useHashRoute();
+  const parsed = parseHash(route);
+  const section = reportsSection(parsed.path);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-slate-900">{t("nav_reports")}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-          <div className="flex rounded-lg bg-slate-100 p-0.5">
-            <button
-              type="button"
-              className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${
-                view === "native" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-              }`}
-              onClick={() => setView("native")}
-            >
-              {t("rep_nativeView")}
-            </button>
-            <button
-              type="button"
-              className={`rounded-md px-2.5 py-1 text-[12px] font-semibold ${
-                view === "netWorth" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"
-              }`}
-              onClick={() => setView("netWorth")}
-            >
-              {t("rep_netWorthView")}
-            </button>
-          </div>
-          <span className="rounded-md bg-slate-100 px-2 py-0.5 font-semibold text-slate-600">
-            {view === "native" ? activeCurrency : reportingCurrency}
-          </span>
-          <span>{t("rep_months", { n: 12 })}</span>
-        </div>
+        <nav className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-0.5 text-[12px] font-semibold">
+          <a
+            href="#/reports/cashflow"
+            className={`rounded-md px-2.5 py-1 ${section === "cashflow" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+          >
+            {t("rep_nativeView")}
+          </a>
+          <a
+            href="#/reports/investments"
+            className={`rounded-md px-2.5 py-1 ${section === "investments" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+          >
+            {t("nav_investments")}
+          </a>
+          <a
+            href="#/reports/net-worth"
+            className={`rounded-md px-2.5 py-1 ${section === "net-worth" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}
+          >
+            {t("nav_netWorth")}
+          </a>
+        </nav>
       </div>
-
-      {view === "native" ? (
-        nativeReady && nativeData ? (
-          <NativeReportView data={nativeData} />
-        ) : (
-          <Spinner />
-        )
-      ) : netWorthReady && netWorthData ? (
-        <NetWorthReportView data={netWorthData} />
+      {section === "investments" ? (
+        <InvestmentReportPage />
+      ) : section === "net-worth" ? (
+        <NetWorthPage />
+      ) : parsed.query.currency ? (
+        <CashflowDetailPage currency={parsed.query.currency} />
       ) : (
-        <Spinner />
+        <CashflowOverviewPage />
       )}
     </div>
   );
 }
 
-function NativeReportView({ data }: { data: ReportsData }) {
+function CashflowOverviewPage() {
+  const { t, lang, boot } = useApp();
+  const [data, setData] = useState<CashflowOverview | null>(null);
+
+  useEffect(() => {
+    api.cashflowOverview().then(setData).catch(() => {});
+  }, []);
+
+  if (!data) return <Spinner />;
+  const active = data.currencies.filter((row) => row.active);
+  const enabled = boot?.enabledCurrencies ?? [];
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold text-slate-600">{`${t("rep_viewCurrency")}：${t("rep_viewAll")}`}</span>
+        <button
+          type="button"
+          className="rounded-full bg-brand-600 px-2.5 py-0.5 text-[12px] font-semibold text-white"
+        >
+          {t("rep_viewAll")}
+        </button>
+        {enabled.map((code) => {
+          const row = data.currencies.find((item) => item.currencyCode === code);
+          return (
+            <a
+              key={code}
+              href={`#/reports/cashflow?currency=${encodeURIComponent(code)}`}
+              className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              {code}
+              {row && !row.active ? ` · ${t("rep_inactive")}` : ""}
+            </a>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {active.map((row) => (
+          <a
+            key={row.currencyCode}
+            href={`#/reports/cashflow?currency=${encodeURIComponent(row.currencyCode)}`}
+            className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-card hover:border-brand-200"
+          >
+            <div className="text-sm font-bold text-slate-800">{row.currencyCode}</div>
+            <dl className="mt-3 space-y-1 text-[13px]">
+              <div className="flex justify-between">
+                <dt className="text-slate-400">{t("rep_cashflowIncome")}</dt>
+                <dd className="num text-emerald-600">
+                  {fmtMoney(row.incomeMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-400">{t("rep_cashflowExpense")}</dt>
+                <dd className="num text-rose-500">
+                  {fmtMoney(row.expenseMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-400">{t("rep_cashflowNet")}</dt>
+                <dd className="num font-semibold text-slate-800">
+                  {fmtMoney(row.netInflowMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </dd>
+              </div>
+            </dl>
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CashflowDetailPage({ currency }: { currency: string }) {
+  const { t, boot } = useApp();
+  const [data, setData] = useState<CashflowDetail | null>(null);
+  const requestGen = useRef(0);
+
+  useEffect(() => {
+    const gen = ++requestGen.current;
+    setData(null);
+    api
+      .cashflowDetail(currency, 12)
+      .then((report) => {
+        if (requestGen.current !== gen) return;
+        if (report.currencyCode !== currency) return;
+        setData(report);
+      })
+      .catch(() => {});
+  }, [currency]);
+
+  const enabled = boot?.enabledCurrencies ?? [];
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold text-slate-600">{`${t("rep_viewCurrency")}：${currency}`}</span>
+        <a href="#/reports/cashflow" className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[12px] font-semibold text-slate-600">
+          {t("rep_viewAll")}
+        </a>
+        {enabled.map((code) => (
+          <a
+            key={code}
+            href={`#/reports/cashflow?currency=${encodeURIComponent(code)}`}
+            className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${
+              code === currency ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600"
+            }`}
+          >
+            {code}
+          </a>
+        ))}
+      </div>
+      {data ? <CashflowDetailView data={data} /> : <Spinner />}
+    </div>
+  );
+}
+
+function InvestmentReportPage() {
+  const { t, lang } = useApp();
+  const [data, setData] = useState<InvestmentList | null>(null);
+
+  useEffect(() => {
+    api.investments().then(setData).catch(() => {});
+  }, []);
+
+  if (!data) return <Spinner />;
+
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-bold text-slate-800">{t("nav_investments")}</h2>
+      <div className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-card">
+        <table className="w-full min-w-[720px] text-left text-[13px]">
+          <thead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            <tr>
+              <th className="px-4 py-2">{t("account_name")}</th>
+              <th className="px-4 py-2">{t("account_currency")}</th>
+              <th className="px-4 py-2 text-right">{t("inv_balance")}</th>
+              <th className="px-4 py-2 text-right">{t("inv_balanceChange")}</th>
+              <th className="px-4 py-2 text-right">{t("inv_contributions")}</th>
+              <th className="px-4 py-2 text-right">{t("inv_withdrawals")}</th>
+              <th className="px-4 py-2 text-right">{t("inv_netContributions")}</th>
+              <th className="px-4 py-2">{t("inv_latestValuation")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.accounts.map((row) => (
+              <tr key={row.accountId} className="border-t border-slate-100">
+                <td className="px-4 py-2 font-medium text-slate-700">
+                  <a href={`#/accounts/${row.accountId}`} className="hover:text-brand-600">
+                    {row.name}
+                  </a>
+                </td>
+                <td className="px-4 py-2 text-slate-500">{row.currencyCode}</td>
+                <td className="num px-4 py-2 text-right">
+                  {fmtMoney(row.balanceMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </td>
+                <td className="num px-4 py-2 text-right">
+                  {fmtMoney(row.balanceChangeMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </td>
+                <td className="num px-4 py-2 text-right">
+                  {fmtMoney(row.contributionsMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </td>
+                <td className="num px-4 py-2 text-right">
+                  {fmtMoney(row.withdrawalsMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </td>
+                <td className="num px-4 py-2 text-right">
+                  {fmtMoney(row.netContributionsMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+                </td>
+                <td className="px-4 py-2 text-slate-500">{row.latestValuationDate ?? t("inv_noValuation")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {data.subtotalsByCurrency.length > 0 && (
+        <div className="mt-4 space-y-1 text-[13px] text-slate-600">
+          {data.subtotalsByCurrency.map((row) => (
+            <div key={row.currencyCode} className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+              <span>{row.currencyCode}</span>
+              <span className="num font-semibold">
+                {fmtMoney(row.balanceMinor, { currencyCode: row.currencyCode, locale: localeForLang(lang) })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NetWorthPage() {
+  const { boot, t } = useApp();
+  const route = useHashRoute();
+  const parsed = parseHash(route);
+  const reportingDefault = boot?.settings.reportingCurrency ?? boot?.enabledCurrencies[0] ?? null;
+  const timezone = boot?.settings.timezone ?? null;
+  const asOfDefault = todayYmd(timezone);
+  const currency = parsed.query.currency || reportingDefault;
+  const asOf = parsed.query.asOf || asOfDefault;
+  const [data, setData] = useState<NetWorthReport | null>(null);
+  const requestGen = useRef(0);
+
+  useEffect(() => {
+    if (!reportingDefault) return;
+    if (parsed.path !== "/reports/net-worth") return;
+    if (!parsed.query.currency || !parsed.query.asOf) {
+      replaceHash(formatHash("/reports/net-worth", { currency: currency ?? reportingDefault, asOf }));
+    }
+  }, [reportingDefault, parsed.path, parsed.query.currency, parsed.query.asOf, currency, asOf]);
+
+  useEffect(() => {
+    if (!currency || !asOf) return;
+    const gen = ++requestGen.current;
+    setData(null);
+    api
+      .netWorthReport({ reportingCurrency: currency, months: 12, asOf })
+      .then((report) => {
+        if (requestGen.current !== gen) return;
+        if (report.reportingCurrency !== currency) return;
+        setData(report);
+      })
+      .catch(() => {});
+  }, [currency, asOf]);
+
+  const enabled = boot?.enabledCurrencies ?? [];
+
+  return (
+    <div>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+          <span>{t("rep_convertTo")}</span>
+          <select
+            aria-label={t("rep_convertTo")}
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-sm"
+            value={currency ?? ""}
+            onChange={(e) => pushHash(formatHash("/reports/net-worth", { currency: e.target.value, asOf }))}
+          >
+            {enabled.map((code) => (
+              <option key={code} value={code}>
+                {code}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-500">
+          <span>{t("rep_asOf", { date: asOf })}</span>
+          <input
+            type="date"
+            aria-label="asOf"
+            className="rounded-md border border-slate-200 px-2 py-1 text-sm"
+            value={asOf}
+            onChange={(e) => pushHash(formatHash("/reports/net-worth", { currency: currency ?? "", asOf: e.target.value }))}
+          />
+        </label>
+      </div>
+      {data ? <NetWorthReportView data={data} /> : <Spinner />}
+    </div>
+  );
+}
+
+function CashflowDetailView({ data }: { data: CashflowDetail }) {
   const { lang, t } = useApp();
   const currency = data.currencyCode;
   const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
 
-  const nw = data.netWorth.map((p) => ({
-    ...p,
-    label: fmtMonthShort(p.month, lang),
-    liabilitiesAbs: Math.abs(p.liabilities),
-  }));
   const ie = data.months.map((m, i) => ({
     label: fmtMonthShort(m, lang),
-    income: data.income[i].value,
-    expense: data.expense[i].value,
-    _income: data.income[i].value,
-    _expense: data.expense[i].value,
+    income: data.income[i]?.value ?? 0,
+    expense: data.expense[i]?.value ?? 0,
+    _income: data.income[i]?.value ?? 0,
+    _expense: data.expense[i]?.value ?? 0,
   }));
   const pie = data.breakdown.filter((b) => b.value > 0).map((b) => ({ name: b.name, value: b.value, _raw: b.value }));
   const cur = data.income[data.income.length - 1];
@@ -170,23 +369,7 @@ function NativeReportView({ data }: { data: ReportsData }) {
     <>
       <p className="mb-4 text-xs text-slate-400">{t("rep_nativeHint")}</p>
 
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
-          <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-            <Scale size={13} /> {t("rep_now")}
-          </div>
-          <div className={`num mt-2 text-2xl font-bold ${data.netWorthNow < 0 ? "text-rose-600" : "text-slate-900"}`}>
-            {money(data.netWorthNow)}
-          </div>
-          <div className="mt-1.5 flex gap-4 text-xs">
-            <span className="flex items-center gap-1 text-emerald-600">
-              <TrendingUp size={12} /> {t("rep_assets")} {money(data.totalAssets)}
-            </span>
-            <span className="flex items-center gap-1 text-rose-500">
-              <TrendingDown size={12} /> {t("rep_liabilities")} {money(data.totalLiabilities)}
-            </span>
-          </div>
-        </div>
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card">
           <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">
             <Hourglass size={13} /> {t("rep_aom")}
@@ -206,25 +389,6 @@ function NativeReportView({ data }: { data: ReportsData }) {
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Card title={t("rep_netWorth")}>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={nw} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-              <defs>
-                <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#6a63f0" stopOpacity={0.28} />
-                  <stop offset="100%" stopColor="#6a63f0" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eef1f6" />
-              <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={70}
-                tickFormatter={(v: number) => money(v)} />
-              <Tooltip content={<MoneyTooltip currency={currency} lang={lang} />} cursor={{ stroke: "#c7d2fe" }} formatter={(v: number | string) => [money(Number(v)), t("rep_net")]} />
-              <Area type="monotone" dataKey="net" stroke="#6a63f0" strokeWidth={2.5} fill="url(#nwFill)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-
         <Card title={t("rep_incomeExpense")}>
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={ie} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={3}>
@@ -456,8 +620,16 @@ function NetWorthReportView({ data }: { data: NetWorthReport }) {
                     {row.convertedBalanceMinor == null ? t("rep_convertedNone") : money(row.convertedBalanceMinor)}
                   </td>
                   <td className="py-2 pr-3 text-slate-500">{row.fx?.rateDate ?? t("rep_convertedNone")}</td>
-                  <td className="py-2 pr-3 text-slate-500">{row.fx?.source ?? t("rep_convertedNone")}</td>
-                  <td className="num py-2 text-right text-slate-500">{row.fx?.rate ?? t("rep_convertedNone")}</td>
+                  <td className="py-2 pr-3 text-slate-500">
+                    {row.fx
+                      ? displayFxSource(row.fx.source, row.fx.from === row.fx.to || row.fx.source === "identity")
+                      : t("rep_convertedNone")}
+                  </td>
+                  <td className="num py-2 text-right text-slate-500">
+                    {row.fx
+                      ? displayFxRate(row.fx.from, row.fx.to, row.fx.rate, lang)
+                      : t("rep_convertedNone")}
+                  </td>
                 </tr>
               ))}
             </tbody>

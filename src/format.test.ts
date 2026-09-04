@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { fmtMoney, fmtMoneyShort, parseAmountToCents, setCurrencySymbol } from "./format";
+import { displayFxRate, displayFxSource, fmtMoney, fmtMoneyShort, parseAmountToCents, setCurrencySymbol } from "./format";
 
 beforeEach(() => {
   setCurrencySymbol("¥");
@@ -33,6 +33,21 @@ describe("fmtMoneyShort (cents)", () => {
   it("uses yi (1e8 yuan = 1e10 cents) with one decimal", () => {
     expect(fmtMoneyShort(150000000000)).toBe("¥15.0亿");
     expect(fmtMoneyShort(-20000000000)).toBe("-¥2.0亿");
+  });
+});
+
+describe("displayFxSource", () => {
+  it("renders human-readable FX sources", () => {
+    expect(displayFxSource("manual")).toBe("人工汇率");
+    expect(displayFxSource("frankfurter_ecb")).toBe("欧洲央行参考汇率");
+    expect(displayFxSource("identity")).toBe("无需换算");
+    expect(displayFxSource("manual", true)).toBe("无需换算");
+  });
+});
+
+describe("displayFxRate", () => {
+  it("formats 1 USD = ¥7.20", () => {
+    expect(displayFxRate("USD", "CNY", "7.20", "zh")).toBe("1 USD = ¥7.20");
   });
 });
 

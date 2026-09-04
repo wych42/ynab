@@ -1,7 +1,10 @@
 import type {
   Bootstrap,
   BudgetData,
+  CashflowDetail,
+  CashflowOverview,
   InvestmentAccountView,
+  InvestmentList,
   NetWorthReport,
   ReportsData,
   Tx,
@@ -235,6 +238,16 @@ export const api = {
     req<ReportsData>(`/api/reports/overview?months=${months}&currency=${encodeURIComponent(currency)}`),
   nativeReport: (currency: string, months = 12) =>
     req<ReportsData>(`/api/reports/native?currency=${encodeURIComponent(currency)}&months=${months}`),
+  cashflowOverview: () => req<CashflowOverview>("/api/reports/cashflow"),
+  cashflowDetail: (currency: string, months = 12) =>
+    req<CashflowDetail>(`/api/reports/cashflow/${encodeURIComponent(currency)}?months=${months}`),
+  investments: (params?: { asOf?: string; months?: number }) => {
+    const q = new URLSearchParams();
+    if (params?.asOf) q.set("asOf", params.asOf);
+    if (params?.months != null) q.set("months", String(params.months));
+    const qs = q.toString();
+    return req<InvestmentList>(`/api/investments${qs ? `?${qs}` : ""}`);
+  },
   netWorthReport: (params: { reportingCurrency: string; months: number; asOf: string }) => {
     const q = new URLSearchParams({
       reportingCurrency: params.reportingCurrency,

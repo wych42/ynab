@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import type { Bootstrap, CurrencyRecord, ReportsData } from "../types";
+import type { Bootstrap, CashflowOverview, CurrencyRecord } from "../types";
 import { formatMoney } from "../money";
 
 const SUPPORTED: CurrencyRecord[] = [
@@ -14,33 +14,42 @@ const SUPPORTED: CurrencyRecord[] = [
   { code: "JPY", exponent: 0, enabledByDefault: true },
 ];
 
+const overview: CashflowOverview = {
+  month: "2026-08",
+  currencies: [
+    { currencyCode: "CNY", incomeMinor: 200_000, expenseMinor: 80_000, netInflowMinor: 120_000, active: true },
+    { currencyCode: "SGD", incomeMinor: 80_000, expenseMinor: 12_000, netInflowMinor: 68_000, active: true },
+    { currencyCode: "USD", incomeMinor: 0, expenseMinor: 2200, netInflowMinor: -2200, active: true },
+    { currencyCode: "JPY", incomeMinor: 0, expenseMinor: 1234, netInflowMinor: -1234, active: true },
+    { currencyCode: "EUR", incomeMinor: 0, expenseMinor: 0, netInflowMinor: 0, active: false },
+  ],
+};
+
 const h = vi.hoisted(() => ({
+  cashflowOverview: vi.fn(),
+  cashflowDetail: vi.fn(),
   nativeReport: vi.fn(),
-  reports: vi.fn(),
-  activeCurrency: "CNY",
+  netWorthReport: vi.fn(),
   boot: {} as Bootstrap,
-  pendingCny: [] as Array<(value: ReportsData) => void>,
 }));
 
 vi.mock("../api", () => ({
   api: {
+    cashflowOverview: (...args: unknown[]) => h.cashflowOverview(...args),
+    cashflowDetail: (...args: unknown[]) => h.cashflowDetail(...args),
     nativeReport: (...args: unknown[]) => h.nativeReport(...args),
-    reports: (...args: unknown[]) => h.reports(...args),
+    netWorthReport: (...args: unknown[]) => h.netWorthReport(...args),
   },
 }));
 
-vi.mock("../store", () => {
-  const t = (k: string, vars?: Record<string, string | number>) => (vars ? `${k}:${JSON.stringify(vars)}` : k);
-  const setActiveCurrency = (code: string) => {
-    h.activeCurrency = code;
-  };
+vi.mock("../store", async () => {
+  const { makeT } = await import("../i18n");
+  const t = makeT("zh");
   return {
     useApp: () => ({
       boot: h.boot,
       lang: "zh" as const,
       t,
-      activeCurrency: h.activeCurrency,
-      setActiveCurrency,
     }),
   };
 });
@@ -54,36 +63,9 @@ globalThis.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserv
 
 import { ReportsPage } from "./ReportsPage";
 
-const native: ReportsData = {
-  currencyCode: "CNY",
-  months: ["2026-06", "2026-07", "2026-08"],
-  income: [
-    { month: "2026-06", value: 0 },
-    { month: "2026-07", value: 0 },
-    { month: "2026-08", value: 200_000 },
-  ],
-  expense: [
-    { month: "2026-06", value: 0 },
-    { month: "2026-07", value: 0 },
-    { month: "2026-08", value: 80_000 },
-  ],
-  netWorth: [
-    { month: "2026-06", assets: 100_000, liabilities: 0, net: 100_000 },
-    { month: "2026-07", assets: 100_000, liabilities: 0, net: 100_000 },
-    { month: "2026-08", assets: 10_120_000, liabilities: 500_000, net: 9_620_000 },
-  ],
-  accounts: [],
-  totalAssets: 10_120_000,
-  totalLiabilities: 500_000,
-  netWorthNow: 9_620_000,
-  breakdown: [{ name: "餐饮", value: 80_000 }],
-  topPayees: [{ name: "盒马", value: 80_000 }],
-  incomeSources: [{ name: "工资薪酬", value: 200_000 }],
-  ageOfMoney: 18,
-};
-
 beforeEach(() => {
-  h.activeCurrency = "CNY";
+  localStorage.clear();
+  window.location.hash = "#/reports";
   h.boot = {
     settings: {
       currencySymbol: "¥",
@@ -113,63 +95,33 @@ beforeEach(() => {
     supportedCurrencies: SUPPORTED,
     enabledCurrencies: ["CNY", "USD", "SGD", "EUR", "JPY"],
   };
-  for (const resolve of h.pendingCny) resolve({ ...native, currencyCode: "CNY" });
-  h.pendingCny = [];
-  h.nativeReport.mockReset().mockResolvedValue(native);
-  h.reports.mockReset();
+  h.cashflowOverview.mockReset().mockResolvedValue(overview);
+  h.cashflowDetail.mockReset();
+  h.nativeReport.mockReset();
+  h.netWorthReport.mockReset();
 });
 
 afterEach(cleanup);
 
-describe("ReportsPage 原币收支", () => {
-  it("按活动币种请求原币报表，并用该币种格式化最小单位金额", async () => {
+describe("ReportsPage 收支全部", () => {
+  it("打开报表默认请求现金流总览，不调用 nativeReport", async () => {
     render(<ReportsPage />);
-    await waitFor(() => expect(h.nativeReport).toHaveBeenCalledWith("CNY", 12));
-    expect(h.reports).not.toHaveBeenCalled();
-    expect(await screen.findByText("CNY")).toBeTruthy();
-    expect(screen.getByText(formatMoney(9_620_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
-    expect(screen.getAllByText(formatMoney(200_000, "CNY", { locale: "zh-CN" })).length).toBeGreaterThan(0);
-    expect(screen.getByText("盒马")).toBeTruthy();
-    expect(screen.getAllByText(formatMoney(80_000, "CNY", { locale: "zh-CN" })).length).toBeGreaterThan(0);
-    expect(screen.getByText("rep_nativeHint")).toBeTruthy();
-    expect(screen.queryByText(formatMoney(96_200, "CNY", { locale: "zh-CN" }))).toBeNull();
+    await waitFor(() => expect(h.cashflowOverview).toHaveBeenCalled());
+    expect(h.nativeReport).not.toHaveBeenCalled();
+    expect(screen.getByText("查看币种：全部")).toBeTruthy();
+    const pageText = (document.body.textContent ?? "").replace(/\u00a0/g, " ");
+    expect(pageText).toContain(formatMoney(200_000, "CNY", { locale: "zh-CN" }).replace(/\u00a0/g, " "));
+    expect(pageText).toContain(formatMoney(80_000, "SGD", { locale: "zh-CN" }).replace(/\u00a0/g, " "));
+    expect(screen.getByText(/无活动/)).toBeTruthy();
   });
 
-  it("ignores a late CNY response after SGD has already rendered", async () => {
-    const sgdReport: ReportsData = {
-      ...native,
-      currencyCode: "SGD",
-      netWorthNow: 12,
-      totalAssets: 12,
-      totalLiabilities: 0,
-      income: native.income.map((row, index) => (index === 2 ? { ...row, value: 12 } : row)),
-      expense: native.expense.map((row) => ({ ...row, value: 0 })),
-      breakdown: [],
-      topPayees: [],
-      incomeSources: [],
-    };
-    h.nativeReport.mockImplementation((currency?: string) => {
-      if (currency !== "SGD") {
-        return new Promise<ReportsData>((resolve) => h.pendingCny.push(resolve));
-      }
-      return Promise.resolve(sgdReport);
-    });
-
-    const { rerender } = render(<ReportsPage />);
-    await waitFor(() => expect(h.pendingCny.length).toBeGreaterThan(0));
-
-    h.activeCurrency = "SGD";
-    rerender(<ReportsPage />);
-    expect(await screen.findByText("SGD")).toBeTruthy();
-    expect(screen.queryByText("CNY")).toBeNull();
-    expect(screen.queryByText(formatMoney(9_620_000, "CNY", { locale: "zh-CN" }))).toBeNull();
-
-    const stale = h.pendingCny.splice(0);
-    for (const resolve of stale) resolve(native);
-    await waitFor(() => {
-      expect(screen.getByText("SGD")).toBeTruthy();
-    });
-    expect(screen.queryByText("CNY")).toBeNull();
-    expect(screen.queryByText(formatMoney(9_620_000, "CNY", { locale: "zh-CN" }))).toBeNull();
+  it("预算刚看过 SGD 也不会把报表变成 SGD 详情", async () => {
+    localStorage.setItem("activeBudgetCurrency", "SGD");
+    window.location.hash = "#/reports/cashflow";
+    render(<ReportsPage />);
+    await waitFor(() => expect(h.cashflowOverview).toHaveBeenCalled());
+    expect(h.cashflowDetail).not.toHaveBeenCalled();
+    expect(h.nativeReport).not.toHaveBeenCalled();
+    expect(screen.getByText(/查看币种/)).toBeTruthy();
   });
 });

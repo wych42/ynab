@@ -15,10 +15,11 @@ const SUPPORTED: CurrencyRecord[] = [
 ];
 
 const h = vi.hoisted(() => ({
+  cashflowOverview: vi.fn(),
+  cashflowDetail: vi.fn(),
   nativeReport: vi.fn(),
   netWorthReport: vi.fn(),
-  reports: vi.fn(),
-  activeCurrency: "CNY",
+  saveSettings: vi.fn(),
   boot: {} as Bootstrap,
   pendingNative: [] as Array<(value: ReportsData) => void>,
   pendingNetWorth: [] as Array<(value: NetWorthReport) => void>,
@@ -26,9 +27,11 @@ const h = vi.hoisted(() => ({
 
 vi.mock("../api", () => ({
   api: {
+    cashflowOverview: (...args: unknown[]) => h.cashflowOverview(...args),
+    cashflowDetail: (...args: unknown[]) => h.cashflowDetail(...args),
     nativeReport: (...args: unknown[]) => h.nativeReport(...args),
     netWorthReport: (...args: unknown[]) => h.netWorthReport(...args),
-    reports: (...args: unknown[]) => h.reports(...args),
+    saveSettings: (...args: unknown[]) => h.saveSettings(...args),
   },
 }));
 
@@ -39,10 +42,6 @@ vi.mock("../store", () => {
       boot: h.boot,
       lang: "zh" as const,
       t,
-      activeCurrency: h.activeCurrency,
-      setActiveCurrency: (code: string) => {
-        h.activeCurrency = code;
-      },
     }),
   };
 });
@@ -123,7 +122,7 @@ const completeNetWorth: NetWorthReport = {
         to: "CNY",
         asOfDate: "2026-08-30",
         rateDate: "2026-08-28",
-        source: "frankfurter_ecb",
+        source: "manual",
         path: "direct",
         rate: "7.20",
       },
@@ -237,36 +236,43 @@ function bootFixture(reportingCurrency: string | null = "CNY"): Bootstrap {
 }
 
 beforeEach(() => {
-  h.activeCurrency = "CNY";
+  window.location.hash = "#/reports/net-worth?currency=CNY&asOf=2026-09-04";
   h.boot = bootFixture("CNY");
   for (const resolve of h.pendingNative) resolve({ ...native, currencyCode: "CNY" });
   for (const resolve of h.pendingNetWorth) resolve(completeNetWorth);
   h.pendingNative = [];
   h.pendingNetWorth = [];
+  h.cashflowOverview.mockReset();
+  h.cashflowDetail.mockReset().mockResolvedValue({
+    currencyCode: "CNY",
+    months: ["2026-06", "2026-07", "2026-08"],
+    income: native.income,
+    expense: native.expense,
+    breakdown: native.breakdown,
+    topPayees: native.topPayees,
+    incomeSources: native.incomeSources,
+    ageOfMoney: native.ageOfMoney,
+  });
   h.nativeReport.mockReset().mockResolvedValue(native);
   h.netWorthReport.mockReset().mockResolvedValue(completeNetWorth);
-  h.reports.mockReset();
+  h.saveSettings.mockReset();
 });
 
 afterEach(cleanup);
 
 async function openNetWorth() {
+  window.location.hash = "#/reports/net-worth?currency=CNY&asOf=2026-09-04";
   render(<ReportsPage />);
-  fireEvent.click(await screen.findByRole("button", { name: "rep_netWorthView" }));
 }
 
 describe("ReportsPage native and consolidated views", () => {
-  it("keeps native income/expense charts on the native view and does not fetch net worth", async () => {
+  it("cashflow detail has no household net-worth now total", async () => {
+    window.location.hash = "#/reports/cashflow?currency=CNY";
     render(<ReportsPage />);
-    expect(await screen.findByText("rep_nativeView")).toBeTruthy();
-    expect(screen.getByText("rep_netWorthView")).toBeTruthy();
-    await waitFor(() => expect(h.nativeReport).toHaveBeenCalledWith("CNY", 12));
+    expect(await screen.findByText("盒马")).toBeTruthy();
+    expect(h.cashflowDetail).toHaveBeenCalledWith("CNY", 12);
+    expect(screen.queryByText("rep_now")).toBeNull();
     expect(h.netWorthReport).not.toHaveBeenCalled();
-    expect(screen.getByText("rep_nativeHint")).toBeTruthy();
-    expect(screen.getByText("盒马")).toBeTruthy();
-    expect(screen.getByText("rep_incomeExpense")).toBeTruthy();
-    expect(screen.getByText("rep_breakdown")).toBeTruthy();
-    expect(screen.getByText(formatMoney(9_620_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
   });
 
   it("loads consolidated net worth with the reporting currency and shows complete totals", async () => {
@@ -280,7 +286,7 @@ describe("ReportsPage native and consolidated views", () => {
         }),
       ),
     );
-    expect(h.nativeReport).toHaveBeenCalledTimes(1);
+    expect(h.nativeReport).not.toHaveBeenCalled();
     expect(screen.queryByText("rep_nativeHint")).toBeNull();
     expect(screen.queryByText("盒马")).toBeNull();
     expect(await screen.findByText(formatMoney(20_400_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
@@ -290,8 +296,21 @@ describe("ReportsPage native and consolidated views", () => {
     expect(screen.getByText("USD 投资账户")).toBeTruthy();
     expect(screen.getByText(formatMoney(1_000_000, "USD", { locale: "zh-CN" }))).toBeTruthy();
     expect(screen.getByText("2026-08-28")).toBeTruthy();
-    expect(screen.getByText("frankfurter_ecb")).toBeTruthy();
-    expect(screen.getByText("7.20")).toBeTruthy();
+    expect(screen.getByText("人工汇率")).toBeTruthy();
+    expect(screen.getByText("1 USD = ¥7.20")).toBeTruthy();
+    expect(screen.getByText("无需换算")).toBeTruthy();
+  });
+
+  it("changing 折算为 only changes the next netWorthReport reportingCurrency", async () => {
+    await openNetWorth();
+    await waitFor(() => expect(h.netWorthReport).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText("rep_convertTo"), { target: { value: "SGD" } });
+    await waitFor(() =>
+      expect(h.netWorthReport).toHaveBeenCalledWith(
+        expect.objectContaining({ reportingCurrency: "SGD", asOf: "2026-09-04" }),
+      ),
+    );
+    expect(h.saveSettings).not.toHaveBeenCalled();
   });
 
   it("hides unified totals when incomplete and still lists native balances plus missing pairs", async () => {
@@ -358,23 +377,7 @@ describe("ReportsPage native and consolidated views", () => {
     ).toBeTruthy();
   });
 
-  it("ignores a late native response after switching to net worth", async () => {
-    h.nativeReport.mockImplementation(
-      () => new Promise<ReportsData>((resolve) => h.pendingNative.push(resolve)),
-    );
-    render(<ReportsPage />);
-    await waitFor(() => expect(h.pendingNative.length).toBeGreaterThan(0));
-    fireEvent.click(screen.getByRole("button", { name: "rep_netWorthView" }));
-    expect(await screen.findByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
-    for (const resolve of h.pendingNative.splice(0)) resolve(native);
-    await waitFor(() => {
-      expect(screen.getByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
-    });
-    expect(screen.queryByText("盒马")).toBeNull();
-    expect(screen.queryByText(formatMoney(9_620_000, "CNY", { locale: "zh-CN" }))).toBeNull();
-  });
-
-  it("ignores a late CNY net-worth response after the reporting currency changes", async () => {
+  it("ignores a late CNY net-worth response after 折算为 changes to USD", async () => {
     const usdReport: NetWorthReport = {
       ...completeNetWorth,
       reportingCurrency: "USD",
@@ -402,12 +405,9 @@ describe("ReportsPage native and consolidated views", () => {
       return Promise.resolve(usdReport);
     });
 
-    const { rerender } = render(<ReportsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "rep_netWorthView" }));
+    await openNetWorth();
     await waitFor(() => expect(h.pendingNetWorth.length).toBeGreaterThan(0));
-
-    h.boot = bootFixture("USD");
-    rerender(<ReportsPage />);
+    fireEvent.change(screen.getByLabelText("rep_convertTo"), { target: { value: "USD" } });
     await waitFor(() => {
       expect(screen.getAllByText(formatMoney(88, "USD", { locale: "zh-CN" })).length).toBeGreaterThan(0);
     });

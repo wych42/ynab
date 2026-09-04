@@ -81,6 +81,20 @@ export function formatMinorInput(amountMinor: number, currencyCode: string): str
   return `${sign}${whole}.${frac}`;
 }
 
+export function displayFxSource(source: string | null | undefined, sameCurrency = false): string {
+  if (sameCurrency || source === "identity") return "无需换算";
+  if (source === "manual") return "人工汇率";
+  if (source === "frankfurter_ecb") return "欧洲央行参考汇率";
+  return source ?? "";
+}
+
+export function displayFxRate(from: string, to: string, rate: string, lang?: string): string {
+  const numeric = Number(rate);
+  if (!Number.isFinite(numeric)) return rate;
+  const formatted = formatMoney(Math.round(numeric * 10 ** getExponent(to)), to, { locale: localeForLang(lang) });
+  return `1 ${from} = ${formatted}`;
+}
+
 export function impliedRateText(
   fromMinor: number,
   fromCode: string,
