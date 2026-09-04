@@ -98,7 +98,7 @@ export function AccountsPage() {
   const onBudget = accs.filter((a) => !a.closed && a.on_budget);
   const tracking = accs.filter((a) => !a.closed && !a.on_budget);
   const closed = accs.filter((a) => a.closed);
-  const supported = boot.supportedCurrencies ?? [];
+  const enabled = boot.enabledCurrencies ?? [];
 
   const openCreate = () => {
     setDate(todayIso(boot.settings.timezone));
@@ -166,15 +166,20 @@ export function AccountsPage() {
                 ))}
               </select>
             </Field>
-            <Field label={t("account_currency")}>
-              <select className={inputCls} value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
-                {supported.map((currency) => (
-                  <option key={currency.code} value={currency.code}>
-                    {currency.code}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div>
+              <Field label={t("account_currency")}>
+                <select className={inputCls} value={currencyCode} onChange={(e) => setCurrencyCode(e.target.value)}>
+                  {enabled.map((code) => (
+                    <option key={code} value={code}>
+                      {code}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <a href="#/settings" className="-mt-2 mb-3 inline-block text-[11px] font-medium text-brand-600 hover:underline">
+                {t("account_manageCurrencies")}
+              </a>
+            </div>
           </div>
           <Field label={t("account_startDate")}>
             <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />

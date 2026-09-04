@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { formatMoney } from "../money";
 import type { Account, Tx } from "../types";
 
@@ -134,8 +134,12 @@ describe("TransactionsPage 按账户币种显示金额", () => {
     expect(await screen.findByText("Paris cafe")).toBeTruthy();
     expect(screen.getByText(formatMoney(2200, "USD", { locale: "zh-CN" }))).toBeTruthy();
     expect(screen.getByText(formatMoney(2000, "EUR", { locale: "zh-CN" }))).toBeTruthy();
+    expect(screen.getByText("账户入账")).toBeTruthy();
+    expect(screen.getByText("商户计价")).toBeTruthy();
     expect(screen.getByText(formatMoney(1234, "JPY", { locale: "zh-CN" }))).toBeTruthy();
     expect(formatMoney(1234, "JPY", { locale: "zh-CN" })).not.toMatch(/\./);
+    const actions = document.querySelector(".row-actions");
+    expect(actions?.className).toMatch(/focus-within:opacity-100/);
   });
 
   it("shows the other-leg currency and amount for a cross-currency transfer", async () => {
@@ -163,7 +167,42 @@ describe("TransactionsPage 按账户币种显示金额", () => {
     expect(await screen.findByText("转账 家庭 CNY")).toBeTruthy();
     const sgdText = formatMoney(10000, "SGD", { locale: "zh-CN" });
     const cnyText = formatMoney(55000, "CNY", { locale: "zh-CN" });
-    expect(screen.getByText((_, node) => node?.textContent === sgdText)).toBeTruthy();
-    expect(screen.getByText((_, node) => node?.textContent === cnyText)).toBeTruthy();
+    expect(document.body.textContent).toContain(sgdText);
+    expect(document.body.textContent).toContain(cnyText);
+    expect(screen.getByText("转出")).toBeTruthy();
+    expect(screen.getByText("入账")).toBeTruthy();
+  });
+
+  it("batch bar only shows the selected count after picking CNY and SGD rows", async () => {
+    h.transactions.mockResolvedValue({
+      total: 2,
+      transactions: [
+        tx({
+          id: "tx-cny",
+          accountId: "acc-cny",
+          account_name: "家庭 CNY",
+          payeeName: "盒马",
+          amount: -10000,
+          currencyCode: "CNY",
+        }),
+        tx({
+          id: "tx-sgd",
+          accountId: "acc-sgd",
+          account_name: "SGD 日常",
+          payeeName: "FairPrice",
+          amount: -5000,
+          currencyCode: "SGD",
+        }),
+      ],
+    });
+
+    render(<TransactionsPage />);
+    expect(await screen.findByText("盒马")).toBeTruthy();
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(checkboxes[2]);
+    expect(screen.getByText("已选 2 笔")).toBeTruthy();
+    expect(screen.queryByText(formatMoney(15000, "CNY", { locale: "zh-CN" }))).toBeNull();
+    expect(screen.queryByText(formatMoney(15000, "SGD", { locale: "zh-CN" }))).toBeNull();
   });
 });

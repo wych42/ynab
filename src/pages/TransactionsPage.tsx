@@ -13,24 +13,18 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useApp } from "../store";
-import { fmtDate, formatAccountMoney, formatMinorInput } from "../format";
+import { fmtDate, formatMinorInput } from "../format";
 import { Btn, Spinner } from "../components/ui";
-import { AmountInput, CategorySelect, PayeeSelect, emptyForm, formAmount, parseOptionalMinor, type FormState } from "../components/txEdit";
+import { AmountInput, CategorySelect, PayeeSelect, TxAmountCaption, emptyForm, formAmount, parseOptionalMinor, type FormState } from "../components/txEdit";
+import { parseHash } from "../hashRoute";
 import type { Tx } from "../types";
 
 const PAGE_SIZE = 200;
 
-/** 解析 hash 路由中的查询参数，如 #/transactions?filter=uncategorized */
-function hashQuery(): URLSearchParams {
-  const h = window.location.hash || "";
-  const i = h.indexOf("?");
-  return new URLSearchParams(i >= 0 ? h.slice(i + 1) : "");
-}
-
 export function TransactionsPage() {
   const { boot, t, lang, refreshBoot, toast } = useApp();
 
-  const [onlyUncat, setOnlyUncat] = useState(() => hashQuery().get("filter") === "uncategorized");
+  const [onlyUncat, setOnlyUncat] = useState(() => parseHash().query.filter === "uncategorized");
   const [accFilter, setAccFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -408,49 +402,37 @@ export function TransactionsPage() {
                 <span className="truncate px-2 text-[12px] text-slate-400">{tx.memo}</span>
                 <span className="num px-2 text-right text-[13px] text-rose-500">
                   {tx.amount < 0 ? (
-                    <>
-                      <span className="block">{formatAccountMoney(-tx.amount, txCurrency(tx), lang)}</span>
-                      {tx.originalCurrencyCode && tx.originalAmountMinor != null && (
-                        <span className="block text-[11px] font-normal text-slate-400">
-                          {formatAccountMoney(tx.originalAmountMinor, tx.originalCurrencyCode, lang)}
-                        </span>
-                      )}
-                      {tx.otherAccountCurrencyCode &&
-                        tx.otherAmountMinor != null &&
-                        tx.otherAccountCurrencyCode !== txCurrency(tx) && (
-                          <span className="block text-[11px] font-normal text-slate-400">
-                            {formatAccountMoney(Math.abs(tx.otherAmountMinor), tx.otherAccountCurrencyCode, lang)}
-                          </span>
-                        )}
-                    </>
+                    <TxAmountCaption
+                      amount={tx.amount}
+                      currencyCode={txCurrency(tx)}
+                      originalCurrencyCode={tx.originalCurrencyCode}
+                      originalAmountMinor={tx.originalAmountMinor}
+                      otherAccountCurrencyCode={tx.otherAccountCurrencyCode}
+                      otherAmountMinor={tx.otherAmountMinor}
+                      lang={lang}
+                    />
                   ) : (
                     ""
                   )}
                 </span>
                 <span className="num px-2 text-right text-[13px] text-emerald-600">
                   {tx.amount > 0 ? (
-                    <>
-                      <span className="block">{formatAccountMoney(tx.amount, txCurrency(tx), lang)}</span>
-                      {tx.originalCurrencyCode && tx.originalAmountMinor != null && (
-                        <span className="block text-[11px] font-normal text-slate-400">
-                          {formatAccountMoney(tx.originalAmountMinor, tx.originalCurrencyCode, lang)}
-                        </span>
-                      )}
-                      {tx.otherAccountCurrencyCode &&
-                        tx.otherAmountMinor != null &&
-                        tx.otherAccountCurrencyCode !== txCurrency(tx) && (
-                          <span className="block text-[11px] font-normal text-slate-400">
-                            {formatAccountMoney(Math.abs(tx.otherAmountMinor), tx.otherAccountCurrencyCode, lang)}
-                          </span>
-                        )}
-                    </>
+                    <TxAmountCaption
+                      amount={tx.amount}
+                      currencyCode={txCurrency(tx)}
+                      originalCurrencyCode={tx.originalCurrencyCode}
+                      originalAmountMinor={tx.originalAmountMinor}
+                      otherAccountCurrencyCode={tx.otherAccountCurrencyCode}
+                      otherAmountMinor={tx.otherAmountMinor}
+                      lang={lang}
+                    />
                   ) : (
                     ""
                   )}
                 </span>
                 <div className="relative flex items-center justify-end pr-1">
                   {!tx.isStart && (
-                    <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100">
+                    <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <button onClick={() => startEdit(tx)} className="rounded-md p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600" title={t("common_edit")}>
                         <Pencil size={12} />
                       </button>

@@ -137,12 +137,43 @@ describe("AccountDetailPage 按账户币种格式化并允许修改空账户币�
     expect(await screen.findByText(formatMoney(1234, "JPY", { locale: "zh-CN" }))).toBeTruthy();
     expect(screen.getByText(formatMoney(234, "JPY", { locale: "zh-CN" }))).toBeTruthy();
     expect(formatMoney(1234, "JPY", { locale: "zh-CN" })).not.toMatch(/\./);
+    expect(screen.queryByRole("combobox", { name: "account_currency" })).toBeNull();
   });
 
-  it("空账户可以提交币种修改", async () => {
+  it("有非期初流水的账户只读显示账户币种，没有下拉", async () => {
+    h.account = baseAccount("acc-usd", "美元卡", "USD", { type: "creditCard", starting_balance: -2200, balance: -2200 });
+    h.transactions = [
+      {
+        id: "tx-usd",
+        accountId: "acc-usd",
+        date: "2026-08-20",
+        payeeName: "Paris cafe",
+        isStart: false,
+        transferAccountId: null,
+        otherAccountName: null,
+        otherAccountType: null,
+        categoryId: null,
+        categoryName: null,
+        memo: "",
+        amount: -2200,
+        cleared: 1,
+        reconciled: 0,
+        balance: -2200,
+        currencyCode: "USD",
+      },
+    ];
+    render(<AccountDetailPage id="acc-usd" />);
+    expect(await screen.findByText("Paris cafe")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "account_currency" })).toBeNull();
+    expect(screen.getByText("account_currency：USD")).toBeTruthy();
+  });
+
+  it("空账户可以提交币种修改，选项只有已启用币种", async () => {
     h.account = jpyAccount(0);
     render(<AccountDetailPage id="acc-jpy" />);
     const select = (await screen.findByLabelText("account_currency")) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(["CNY", "USD", "SGD", "EUR", "JPY"]);
+    expect([...select.options].map((o) => o.value)).not.toContain("CAD");
     fireEvent.change(select, { target: { value: "USD" } });
     await waitFor(() => expect(h.updateAccount).toHaveBeenCalledWith("acc-jpy", { currencyCode: "USD" }));
   });
@@ -208,6 +239,26 @@ describe("AccountDetailPage 跨币种转账、原始金额与 JPY 精度", () =>
     expect(h.createTx.mock.calls[0][0].toAmountMinor).toBeUndefined();
   });
 
+  it("美元卡原始消费下拉有 GBP 和 EUR，没有账户币种 USD", async () => {
+    h.account = baseAccount("acc-usd", "USD 信用卡", "USD", { type: "creditCard" });
+    render(<AccountDetailPage id="acc-usd" />);
+    const select = (await screen.findByLabelText("tx_originalCurrency")) as HTMLSelectElement;
+    const values = [...select.options].map((o) => o.value);
+    expect(values).toContain("GBP");
+    expect(values).toContain("EUR");
+    expect(values).not.toContain("USD");
+  });
+
+  it("只填商户金额不会倒推账户入账金额", async () => {
+    h.account = baseAccount("acc-usd", "USD 信用卡", "USD", { type: "creditCard" });
+    render(<AccountDetailPage id="acc-usd" />);
+    fireEvent.change(await screen.findByLabelText("tx_originalCurrency"), { target: { value: "EUR" } });
+    fireEvent.change(screen.getByLabelText("tx_originalAmount"), { target: { value: "20.00" } });
+    expect((screen.getByPlaceholderText("tx_outflow") as HTMLInputElement).value).toBe("");
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() => expect(h.createTx).not.toHaveBeenCalled());
+  });
+
   it("submits original EUR 20.00 with a USD booked amount of -22.00", async () => {
     h.account = baseAccount("acc-usd", "USD 信用卡", "USD", { type: "creditCard" });
     h.transactions = [
@@ -265,6 +316,14 @@ describe("AccountDetailPage 跨币种转账、原始金额与 JPY 精度", () =>
         })
       )
     );
+  });
+
+  it("rejects a JPY outflow with a decimal fraction", async () => {
+    h.account = jpyAccount(1234);
+    render(<AccountDetailPage id="acc-jpy" />);
+    fireEvent.change(await screen.findByPlaceholderText("tx_outflow"), { target: { value: "123.4" } });
+    fireEvent.keyDown(screen.getByPlaceholderText("tx_outflow"), { key: "Enter" });
+    await waitFor(() => expect(h.createTx).not.toHaveBeenCalled());
   });
 
   it("uses whole-yen precision in the reconcile field", async () => {

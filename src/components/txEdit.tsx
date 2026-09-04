@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import { useApp } from "../store";
-import { parseAmountToCents, todayIso } from "../format";
+import { formatAccountMoney, parseAmountToCents, todayIso } from "../format";
 import { parseAmountToMinor } from "../money";
 import type { CategoryGroup } from "../types";
+import type { Lang } from "../i18n";
 
 export interface FormState {
   date: string;
@@ -216,4 +217,107 @@ export function AmountInput({
       onChange={(e) => onChange(e.target.value)}
     />
   );
+}
+
+export function originalSpendCodes(
+  supported: { code: string }[] | undefined,
+  accountCurrency: string | null | undefined,
+): string[] {
+  return (supported ?? []).map((item) => item.code).filter((code) => code !== accountCurrency);
+}
+
+export function OriginalSpendFields({
+  accountCurrency,
+  form,
+  setForm,
+}: {
+  accountCurrency: string | null | undefined;
+  form: FormState;
+  setForm: (next: FormState) => void;
+}) {
+  const { boot, t } = useApp();
+  const codes = originalSpendCodes(boot?.supportedCurrencies, accountCurrency);
+  return (
+    <div className="flex flex-wrap items-center gap-3 border-t border-brand-100 px-4 py-2 text-[12px]">
+      <label className="flex items-center gap-2">
+        <span className="text-slate-500">{t("tx_originalCurrency")}</span>
+        <select
+          aria-label={t("tx_originalCurrency")}
+          className="rounded-md border border-slate-200 bg-white px-2 py-1"
+          value={form.originalCurrencyCode}
+          onChange={(e) => setForm({ ...form, originalCurrencyCode: e.target.value })}
+        >
+          <option value="">{t("tx_originalNone")}</option>
+          {codes.map((code) => (
+            <option key={code} value={code}>
+              {code}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-2">
+        <span className="text-slate-500">{t("tx_originalAmount")}</span>
+        <input
+          aria-label={t("tx_originalAmount")}
+          className="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-right num outline-none"
+          value={form.originalAmount}
+          onChange={(e) => setForm({ ...form, originalAmount: e.target.value })}
+          disabled={!form.originalCurrencyCode}
+        />
+      </label>
+    </div>
+  );
+}
+
+export function TxAmountCaption({
+  amount,
+  currencyCode,
+  originalCurrencyCode,
+  originalAmountMinor,
+  otherAccountCurrencyCode,
+  otherAmountMinor,
+  lang,
+}: {
+  amount: number;
+  currencyCode?: string | null;
+  originalCurrencyCode?: string | null;
+  originalAmountMinor?: number | null;
+  otherAccountCurrencyCode?: string | null;
+  otherAmountMinor?: number | null;
+  lang: Lang;
+}) {
+  const { t } = useApp();
+  const booked = formatAccountMoney(Math.abs(amount), currencyCode, lang);
+  if (originalCurrencyCode && originalAmountMinor != null) {
+    return (
+      <>
+        <span className="block">
+          <span className="mr-1 font-medium text-slate-500">{t("tx_accountBooked")}</span>
+          {booked}
+        </span>
+        <span className="block text-[11px] font-normal text-slate-400">
+          <span className="mr-1">{t("tx_merchantPrice")}</span>
+          {formatAccountMoney(originalAmountMinor, originalCurrencyCode, lang)}
+        </span>
+      </>
+    );
+  }
+  if (otherAccountCurrencyCode && otherAmountMinor != null && otherAccountCurrencyCode !== currencyCode) {
+    const other = formatAccountMoney(Math.abs(otherAmountMinor), otherAccountCurrencyCode, lang);
+    const sent = amount < 0 ? booked : other;
+    const received = amount < 0 ? other : booked;
+    return (
+      <>
+        <span className="block">
+          <span className="mr-1 font-medium text-slate-500">{t("tx_transferOut")}</span>
+          {sent}
+        </span>
+        <span className="block text-[11px] font-normal text-slate-400">
+          <span className="mr-1">{t("tx_transferIn")}</span>
+          {received}
+        </span>
+      </>
+    );
+  }
+  return <span className="block">{booked}</span>;
 }

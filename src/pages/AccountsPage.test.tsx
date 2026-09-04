@@ -116,13 +116,15 @@ describe("AccountsPage 新建账户弹窗", () => {
     );
   });
 
-  it("币种选项来自 Bootstrap 目录，默认取汇总币种，并发送 startingBalanceMinor", async () => {
+  it("币种选项只来自已启用集合，默认取净资产默认币种，CAD 不可选", async () => {
     render(<AccountsPage />);
     fireEvent.click(await screen.findByRole("button", { name: "account_add" }));
     const currency = (await screen.findByLabelText("account_currency")) as HTMLSelectElement;
     expect(currency.value).toBe("CNY");
-    expect([...currency.options].map((o) => o.value)).toEqual(SUPPORTED.map((item) => item.code));
-    expect([...currency.options].map((o) => o.value)).toEqual(expect.arrayContaining(["CAD", "GBP"]));
+    expect([...currency.options].map((o) => o.value)).toEqual(["CNY", "USD", "SGD", "EUR", "JPY"]);
+    expect([...currency.options].map((o) => o.value)).not.toContain("CAD");
+    expect([...currency.options].map((o) => o.value)).not.toContain("GBP");
+    expect(screen.getByRole("link", { name: "account_manageCurrencies" }).getAttribute("href")).toBe("#/settings");
 
     fireEvent.change(screen.getByLabelText("account_name"), { target: { value: "美元卡" } });
     fireEvent.change(currency, { target: { value: "USD" } });
@@ -185,5 +187,6 @@ describe("AccountsPage 按账户币种展示，不把异币余额加在一起", 
 
     expect(within(tracking as HTMLElement).getByText("美元投资")).toBeTruthy();
     expect(within(tracking as HTMLElement).getAllByText(formatMoney(1000000, "USD", { locale: "zh-CN" })).length).toBeGreaterThan(0);
+    expect(screen.queryByText(formatMoney(11100000, "CNY", { locale: "zh-CN" }))).toBeNull();
   });
 });

@@ -17,7 +17,7 @@ import { useApp } from "../store";
 import { fmtDate, formatAccountMoney, formatMinorInput, impliedRateText, parseAmountToCents, todayIso } from "../format";
 import { parseAmountToMinor } from "../money";
 import { Btn, Modal, Spinner, Field, inputCls } from "../components/ui";
-import { AmountInput, CategorySelect, PayeeSelect, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, parseOptionalMinor, type FormState } from "../components/txEdit";
+import { AmountInput, CategorySelect, OriginalSpendFields, PayeeSelect, TxAmountCaption, defaultIncomeCategory, emptyForm, formAmount, incomeCategoryIds, parseOptionalMinor, type FormState } from "../components/txEdit";
 import { ACCOUNT_TYPE_LABELS } from "./AccountsPage";
 import { InvestmentAccountSummary } from "./InvestmentAccountSummary";
 import type { Account, InvestmentAccountView, Tx } from "../types";
@@ -105,6 +105,8 @@ export function AccountDetailPage({ id }: { id: string }) {
   if (isInvestmentAccount && summary === undefined) return <Spinner />;
 
   const label = ACCOUNT_TYPE_LABELS[reg.account.type];
+  const canChangeCurrency =
+    (reg.account.balance ?? 0) === 0 && !reg.transactions.some((tx) => !tx.isStart);
   const clearedBalance =
     (boot.accounts.find((a) => a.id === id)?.starting_balance ?? 0) +
     reg.transactions.filter((tx) => tx.cleared === 1 && !tx.isStart).reduce((s, tx) => s + tx.amount, 0);
@@ -155,31 +157,37 @@ export function AccountDetailPage({ id }: { id: string }) {
           </a>
           <HeaderName name={reg.account.name} onSave={async (n) => { await api.updateAccount(id, { name: n }); await refreshBoot(); await load(); }} />
           {label && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">{label[lang]}</span>}
-          <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
-            <span>{t("account_currency")}</span>
-            <select
-              aria-label={t("account_currency")}
-              className={`${inputCls} w-24 py-1 text-[12px]`}
-              value={currencyCode ?? ""}
-              onChange={async (e) => {
-                const next = e.target.value;
-                if (!next || next === currencyCode) return;
-                try {
-                  await api.updateAccount(id, { currencyCode: next });
-                  await Promise.all([refreshBoot(), load()]);
-                } catch (err) {
-                  const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
-                  toast(code === "account_currency_locked" ? t("account_currencyLocked") : t("common_error"), "err");
-                }
-              }}
-            >
-              {(boot.supportedCurrencies ?? []).map((currency) => (
-                <option key={currency.code} value={currency.code}>
-                  {currency.code}
-                </option>
-              ))}
-            </select>
-          </label>
+          {canChangeCurrency ? (
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
+              <span>{t("account_currency")}</span>
+              <select
+                aria-label={t("account_currency")}
+                className={`${inputCls} w-24 py-1 text-[12px]`}
+                value={currencyCode ?? ""}
+                onChange={async (e) => {
+                  const next = e.target.value;
+                  if (!next || next === currencyCode) return;
+                  try {
+                    await api.updateAccount(id, { currencyCode: next });
+                    await Promise.all([refreshBoot(), load()]);
+                  } catch (err) {
+                    const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
+                    toast(code === "account_currency_locked" ? t("account_currencyLocked") : t("common_error"), "err");
+                  }
+                }}
+              >
+                {(boot.enabledCurrencies ?? []).map((code) => (
+                  <option key={code} value={code}>
+                    {code}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <span className="text-[11px] font-medium text-slate-500">
+              {t("account_currency")}：{currencyCode}
+            </span>
+          )}
           {accMeta?.closed === 1 && (
             <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-[11px] font-medium text-white">{t("account_closedTip")}</span>
           )}
@@ -379,17 +387,15 @@ function AmountCell({
   if (!show) return <span className={`num px-2 text-right text-[13px] ${tone === "out" ? "text-rose-500" : "text-emerald-600"}`} />;
   return (
     <span className={`num px-2 text-right text-[13px] ${tone === "out" ? "text-rose-500" : "text-emerald-600"}`}>
-      <span className="block">{formatAccountMoney(Math.abs(amount), currencyCode, lang)}</span>
-      {originalCurrencyCode && originalAmountMinor != null && (
-        <span className="block text-[11px] font-normal text-slate-400">
-          {formatAccountMoney(originalAmountMinor, originalCurrencyCode, lang)}
-        </span>
-      )}
-      {otherAccountCurrencyCode && otherAmountMinor != null && otherAccountCurrencyCode !== currencyCode && (
-        <span className="block text-[11px] font-normal text-slate-400">
-          {formatAccountMoney(Math.abs(otherAmountMinor), otherAccountCurrencyCode, lang)}
-        </span>
-      )}
+      <TxAmountCaption
+        amount={amount}
+        currencyCode={currencyCode}
+        originalCurrencyCode={originalCurrencyCode}
+        originalAmountMinor={originalAmountMinor}
+        otherAccountCurrencyCode={otherAccountCurrencyCode}
+        otherAmountMinor={otherAmountMinor}
+        lang={lang}
+      />
     </span>
   );
 }
@@ -583,6 +589,9 @@ function TxFormRow({
       </div>
       {cross && other?.currencyCode && (
         <div className="flex flex-wrap items-center gap-3 border-t border-brand-100 px-4 py-2 text-[12px]">
+          <span className="font-medium text-slate-500">
+            {t("tx_transferOut")} / {t("tx_transferIn")}
+          </span>
           <label className="flex items-center gap-2">
             <span className="text-slate-500">
               {(booked ?? 0) >= 0 ? t("tx_sourceAmount", { code: other.currencyCode }) : t("tx_destAmount", { code: other.currencyCode })}
@@ -598,34 +607,7 @@ function TxFormRow({
         </div>
       )}
       {!form.transferAccountId && (
-        <div className="flex flex-wrap items-center gap-3 border-t border-brand-100 px-4 py-2 text-[12px]">
-          <label className="flex items-center gap-2">
-            <span className="text-slate-500">{t("tx_originalCurrency")}</span>
-            <select
-              aria-label={t("tx_originalCurrency")}
-              className="rounded-md border border-slate-200 bg-white px-2 py-1"
-              value={form.originalCurrencyCode}
-              onChange={(e) => setForm({ ...form, originalCurrencyCode: e.target.value })}
-            >
-              <option value="">{t("tx_originalNone")}</option>
-              {(boot?.supportedCurrencies ?? []).map((currency) => (
-                <option key={currency.code} value={currency.code}>
-                  {currency.code}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-slate-500">{t("tx_originalAmount")}</span>
-            <input
-              aria-label={t("tx_originalAmount")}
-              className="w-36 rounded-md border border-slate-200 bg-white px-2 py-1 text-right num outline-none"
-              value={form.originalAmount}
-              onChange={(e) => setForm({ ...form, originalAmount: e.target.value })}
-              disabled={!form.originalCurrencyCode}
-            />
-          </label>
-        </div>
+        <OriginalSpendFields accountCurrency={currentCode} form={form} setForm={setForm} />
       )}
     </div>
   );
@@ -771,7 +753,7 @@ function TxTable({
               <span className={`num text-[13px] ${tx.balance !== undefined && tx.balance < 0 ? "text-rose-500" : "text-slate-400"}`}>
                 {tx.balance !== undefined ? formatAccountMoney(tx.balance, currencyCode, lang) : ""}
               </span>
-              <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100">
+              <div className="row-actions absolute -left-16 flex gap-1 rounded-lg border border-slate-100 bg-white p-0.5 opacity-0 shadow-pop transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                 {!tx.isStart && (
                   <>
                     <button onClick={() => onStartEdit(tx)} className="rounded-md p-1.5 text-slate-400 hover:bg-brand-50 hover:text-brand-600" title={t("common_edit")}>
