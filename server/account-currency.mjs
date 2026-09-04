@@ -117,9 +117,33 @@ export function setReportingCurrency(database, currencyCode) {
   return code;
 }
 
+export function currencyInUseReason(database, currencyCode) {
+  const code = parsePublicCurrencyCode(currencyCode);
+  const reporting = readSetting(database, REPORTING_CURRENCY_KEY);
+  if (reporting === code) return "cannot_disable_reporting_currency";
+  const hasAccount = database.prepare("SELECT 1 FROM accounts WHERE currency_code=? LIMIT 1").get(code);
+  const hasAssignment = database.prepare("SELECT 1 FROM assignments WHERE currency_code=? LIMIT 1").get(code);
+  const hasGoal = database.prepare("SELECT 1 FROM goals WHERE currency_code=? LIMIT 1").get(code);
+  if (hasAccount || hasAssignment || hasGoal) return "currency_in_use";
+  return null;
+}
+
+export function disableCurrency(database, currencyCode) {
+  const code = parsePublicCurrencyCode(currencyCode);
+  const reason = currencyInUseReason(database, code);
+  if (reason) {
+    throw new AccountCurrencyError(reason, `${code} cannot be disabled`);
+  }
+  database.prepare("DELETE FROM currency_ledgers WHERE currency_code=?").run(code);
+  return code;
+}
+
 export function applyCurrencySettings(database, body = {}) {
   if (typeof body.enableCurrency === "string") {
     enableBuiltInCurrency(database, body.enableCurrency);
+  }
+  if (typeof body.disableCurrency === "string") {
+    disableCurrency(database, body.disableCurrency);
   }
   if (typeof body.reportingCurrency === "string") {
     setReportingCurrency(database, body.reportingCurrency);
@@ -154,11 +178,11 @@ export function createAccountRecord(database, input, options = {}) {
 
   let currencyCode = input.currencyCode;
   if (requireCurrency) {
-    currencyCode = parsePublicCurrencyCode(currencyCode);
+    currencyCode = requireEnabledCurrency(database, currencyCode);
   } else if (currencyCode == null || currencyCode === "") {
     currencyCode = resolveInternalAccountCurrency(database);
   } else {
-    currencyCode = parsePublicCurrencyCode(currencyCode);
+    currencyCode = requireEnabledCurrency(database, currencyCode);
   }
 
   const startingBalanceMinor = input.startingBalanceMinor ?? 0;
@@ -171,7 +195,6 @@ export function createAccountRecord(database, input, options = {}) {
   const createdAt = nowIso();
 
   const run = database.transaction(() => {
-    if (currencyCode) enableBuiltInCurrency(database, currencyCode);
     database
       .prepare(
         "INSERT INTO accounts(id,name,type,on_budget,closed,starting_balance,starting_balance_date,sort_order,created_at,currency_code) VALUES(?,?,?,?,0,?,?,?,?,?)"
@@ -190,7 +213,7 @@ export function createAccountRecord(database, input, options = {}) {
 }
 
 export function changeAccountCurrency(database, accountId, currencyCode) {
-  const code = parsePublicCurrencyCode(currencyCode);
+  const code = requireEnabledCurrency(database, currencyCode);
   const acc = database.prepare("SELECT id FROM accounts WHERE id=?").get(accountId);
   if (!acc) throw new Error("not found");
   if (businessTransactionCount(database, accountId) > 0 || accountBalance(database, accountId) !== 0) {
@@ -199,10 +222,6 @@ export function changeAccountCurrency(database, accountId, currencyCode) {
       "account currency cannot change once it has a non-zero balance or non-start transactions"
     );
   }
-  const run = database.transaction(() => {
-    enableBuiltInCurrency(database, code);
-    database.prepare("UPDATE accounts SET currency_code=? WHERE id=?").run(code, accountId);
-  });
-  run();
+  database.prepare("UPDATE accounts SET currency_code=? WHERE id=?").run(code, accountId);
   return code;
 }

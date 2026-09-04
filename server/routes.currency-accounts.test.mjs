@@ -164,9 +164,9 @@ describe("reporting currency must already be enabled", () => {
   });
 });
 
-describe("createAccountRecord is atomic under a real SQLite failure", () => {
-  it("rolls back a newly enabled ledger when account insertion is aborted", () => {
-    const dataDir = makeTempDataDir("ynab-account-atomic-");
+describe("createAccountRecord does not enable a disabled catalog currency", () => {
+  it("rejects CAD before any insert and leaves ledgers unchanged", () => {
+    const dataDir = makeTempDataDir("ynab-account-no-implicit-enable-");
     const database = openBudgetDatabase(budgetDbPath(dataDir));
     try {
       expect(database.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='CAD'").get()).toBeUndefined();
@@ -177,15 +177,8 @@ describe("createAccountRecord is atomic under a real SQLite failure", () => {
         .all()
         .map((row) => row.currency_code);
 
-      database.exec(`
-        CREATE TRIGGER test_fail_account_insert
-        AFTER INSERT ON accounts
-        BEGIN
-          SELECT RAISE(ABORT, 'controlled account insert failure');
-        END;
-      `);
-
-      expect(() =>
+      let thrown;
+      try {
         createAccountRecord(
           database,
           {
@@ -196,9 +189,12 @@ describe("createAccountRecord is atomic under a real SQLite failure", () => {
             startingDate: "2026-08-01",
           },
           { requireCurrency: true }
-        )
-      ).toThrow(/controlled account insert failure/);
+        );
+      } catch (error) {
+        thrown = error;
+      }
 
+      expect(thrown?.code).toBe("currency_not_enabled");
       expect(database.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='CAD'").get()).toBeUndefined();
       expect(
         database.prepare("SELECT currency_code FROM currency_ledgers ORDER BY currency_code").all().map((row) => row.currency_code)
@@ -207,48 +203,37 @@ describe("createAccountRecord is atomic under a real SQLite failure", () => {
       expect(database.prepare("SELECT COUNT(*) c FROM transactions").get().c).toBe(txsBefore);
       expect(database.prepare("SELECT 1 FROM accounts WHERE name='加元失败'").get()).toBeUndefined();
     } finally {
-      database.exec("DROP TRIGGER IF EXISTS test_fail_account_insert");
       database.close();
     }
   });
 });
 
-describe("creating an account can enable a built-in ledger atomically", () => {
-  it("enables CAD, writes the account and optional starting transaction together", async () => {
+describe("creating an account cannot enable a built-in ledger", () => {
+  it("rejects CAD with currency_not_enabled and does not write a CAD ledger", async () => {
     expect(ledgerCodes()).not.toContain("CAD");
-    const created = await createAccount({
+    const countBefore = db.prepare("SELECT COUNT(*) c FROM accounts").get().c;
+    const created = await call("POST", "/api/accounts", {
       name: "加元账户",
       type: "checking",
       currencyCode: "CAD",
       startingBalanceMinor: 2500,
       startingDate: "2026-08-01",
     });
-
-    const presented = created.json.accounts.find((account) => account.id === created.json.id);
-    expect(presented).toMatchObject({
-      id: created.json.id,
-      currencyCode: "CAD",
-      starting_balance: 2500,
-      balance: 2500,
-    });
-    expect(presented.currency_code).toBeUndefined();
-    expect(accountRow(created.json.id)).toMatchObject({
-      name: "加元账户",
-      currency_code: "CAD",
-      starting_balance: 2500,
-    });
-    expect(ledgerCodes().filter((code) => code === "CAD")).toEqual(["CAD"]);
-    expect(
-      db
-        .prepare("SELECT amount, is_start, date FROM transactions WHERE account_id=? AND is_start=1")
-        .get(created.json.id)
-    ).toMatchObject({ amount: 2500, is_start: 1, date: "2026-08-01" });
+    expectCurrencyError(created, "currency_not_enabled");
+    expect(ledgerCodes()).not.toContain("CAD");
+    expect(db.prepare("SELECT COUNT(*) c FROM accounts").get().c).toBe(countBefore);
+    expect(db.prepare("SELECT 1 FROM accounts WHERE name='加元账户'").get()).toBeUndefined();
   });
 
-  it("enables the same currency idempotently and does not create a second ledger", async () => {
-    const first = await createAccount({ name: "加元二", currencyCode: "CAD" });
-    expect(accountRow(first.json.id).currency_code).toBe("CAD");
-    expect(ledgerCodes().filter((code) => code === "CAD")).toEqual(["CAD"]);
+  it("rejects a second CAD create the same way", async () => {
+    const created = await call("POST", "/api/accounts", {
+      name: "加元二",
+      type: "cash",
+      currencyCode: "CAD",
+      startingBalanceMinor: 0,
+    });
+    expectCurrencyError(created, "currency_not_enabled");
+    expect(ledgerCodes()).not.toContain("CAD");
   });
 });
 
@@ -284,7 +269,7 @@ describe("account responses expose camelCase currencyCode", () => {
 });
 
 describe("empty accounts can change currency; used accounts cannot", () => {
-  it("changes an empty account and may enable the target ledger in the same transaction", async () => {
+  it("changes an empty account only to an already enabled currency", async () => {
     const created = await createAccount({ name: "空账户", currencyCode: "CNY" });
     const id = created.json.id;
     expect(ledgerCodes()).not.toContain("GBP");
@@ -294,10 +279,10 @@ describe("empty accounts can change currency; used accounts cannot", () => {
     expect(changed.json.accounts.find((account) => account.id === id).currencyCode).toBe("EUR");
     expect(accountRow(id).currency_code).toBe("EUR");
 
-    const toOptional = await call("PUT", `/api/accounts/${id}`, { currencyCode: "GBP" });
-    expect(toOptional.status).toBe(200);
-    expect(accountRow(id).currency_code).toBe("GBP");
-    expect(ledgerCodes().filter((code) => code === "GBP")).toEqual(["GBP"]);
+    const toDisabled = await call("PUT", `/api/accounts/${id}`, { currencyCode: "GBP" });
+    expectCurrencyError(toDisabled, "currency_not_enabled");
+    expect(accountRow(id).currency_code).toBe("EUR");
+    expect(ledgerCodes()).not.toContain("GBP");
   });
 
   it("rejects a change when the balance is non-zero and leaves the row unchanged", async () => {

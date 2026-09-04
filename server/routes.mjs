@@ -329,6 +329,7 @@ api.put("/settings", (req, res) => {
     backupR2AccessKeyId,
     backupR2SecretKey,
     enableCurrency,
+    disableCurrency,
     reportingCurrency,
   } = req.body || {};
 
@@ -344,8 +345,8 @@ api.put("/settings", (req, res) => {
   }
 
   try {
-    if (typeof enableCurrency === "string" || typeof reportingCurrency === "string") {
-      const apply = db.transaction(() => applyCurrencySettings(db, { enableCurrency, reportingCurrency }));
+    if (typeof enableCurrency === "string" || typeof disableCurrency === "string" || typeof reportingCurrency === "string") {
+      const apply = db.transaction(() => applyCurrencySettings(db, { enableCurrency, disableCurrency, reportingCurrency }));
       apply();
     }
   } catch (e) {

@@ -220,6 +220,63 @@ describe("postTransaction", () => {
       })
     )).toBe("account_currency_mismatch");
   });
+
+  it("accepts an original spend in disabled GBP without creating a GBP ledger", () => {
+    expect(db.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='GBP'").get()).toBeUndefined();
+    const usd = createAccount({ name: "USD GBP original", type: "creditCard", currencyCode: "USD", startingBalance: 0 });
+    const posted = postTransaction(db, {
+      accountId: usd,
+      date: DAY,
+      payeeName: "London shop",
+      amount: -1500,
+      originalCurrencyCode: "GBP",
+      originalAmountMinor: 1200,
+    });
+    const row = db.prepare("SELECT * FROM transactions WHERE id=?").get(posted.id);
+    expect(row.amount).toBe(-1500);
+    expect(row.original_currency_code).toBe("GBP");
+    expect(row.original_amount).toBe(1200);
+    expect(db.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='GBP'").get()).toBeUndefined();
+    const balance = db
+      .prepare(
+        `SELECT a.starting_balance + COALESCE((SELECT SUM(t.amount) FROM transactions t WHERE t.account_id=a.id AND t.is_start=0),0) AS balance
+         FROM accounts a WHERE a.id=?`
+      )
+      .get(usd).balance;
+    expect(balance).toBe(-1500);
+  });
+
+  it("rejects an original currency that matches the account currency", () => {
+    const usd = createAccount({ name: "USD same original", type: "cash", currencyCode: "USD", startingBalance: 0 });
+    const before = txCount();
+    expect(thrownCode(() =>
+      postTransaction(db, {
+        accountId: usd,
+        date: DAY,
+        amount: -2200,
+        originalCurrencyCode: "USD",
+        originalAmountMinor: 2200,
+      })
+    )).toBe("original_currency_matches_account");
+    expect(txCount()).toBe(before);
+  });
+
+  it("does not derive the booked amount from an original merchant amount", () => {
+    const usd = createAccount({ name: "USD no fx derive", type: "creditCard", currencyCode: "USD", startingBalance: 0 });
+    const before = txCount();
+    expect(thrownCode(() =>
+      postTransaction(db, {
+        accountId: usd,
+        date: DAY,
+        originalCurrencyCode: "EUR",
+        originalAmountMinor: 2000,
+      })
+    )).toBe("amount_required");
+    expect(txCount()).toBe(before);
+    expect(
+      db.prepare("SELECT 1 FROM transactions WHERE account_id=? AND original_currency_code='EUR'").get(usd)
+    ).toBeUndefined();
+  });
 });
 
 describe("postTransfer same-currency", () => {

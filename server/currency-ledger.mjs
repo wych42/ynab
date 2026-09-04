@@ -84,7 +84,7 @@ function getAccount(database, id, { notFoundCode = "account_not_found", notFound
   return acc;
 }
 
-function parseOriginal(input) {
+function parseOriginal(input, accountCurrencyCode) {
   const hasCode = input.originalCurrencyCode != null && input.originalCurrencyCode !== "";
   const hasAmount = input.originalAmountMinor != null && input.originalAmountMinor !== "";
   if (hasCode !== hasAmount) {
@@ -95,6 +95,12 @@ function parseOriginal(input) {
   }
   if (!hasCode) return { originalCurrencyCode: null, originalAmountMinor: null };
   assertSupportedCurrency(input.originalCurrencyCode);
+  if (input.originalCurrencyCode === accountCurrencyCode) {
+    throw new CurrencyLedgerError(
+      "original_currency_matches_account",
+      "original currency must differ from the account currency"
+    );
+  }
   assertSafeInteger(input.originalAmountMinor, "originalAmountMinor");
   return {
     originalCurrencyCode: input.originalCurrencyCode,
@@ -188,7 +194,7 @@ export function postTransaction(database, input = {}, options = {}) {
       throw new CurrencyLedgerError("account_currency_mismatch", "booked currency must match the account currency");
     }
   }
-  const original = parseOriginal(input);
+  const original = parseOriginal(input, acc.currency_code);
   const id = options.keepId || input.id || uid();
   const run = database.transaction(() => {
     insertLeg(database, {

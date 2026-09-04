@@ -70,6 +70,56 @@ describe("POST /api/transactions original amount", () => {
     });
     expectCurrencyError(incomplete, "original_amount_incomplete");
   });
+
+  it("stores original GBP on a USD card without enabling GBP", async () => {
+    expect(db.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='GBP'").get()).toBeUndefined();
+    const usd = createAccount({ name: "USD GBP original", type: "creditCard", currencyCode: "USD", startingBalance: 0 });
+    const ok = await call("POST", "/api/transactions", {
+      accountId: usd,
+      date: DAY,
+      payeeName: "London shop",
+      amount: -1500,
+      originalCurrencyCode: "GBP",
+      originalAmountMinor: 1200,
+    });
+    expect(ok.status).toBe(200);
+    const list = await call("GET", `/api/accounts/${usd}/transactions`);
+    const row = list.json.transactions.find((tx) => tx.payeeName === "London shop");
+    expect(row).toMatchObject({
+      amount: -1500,
+      currencyCode: "USD",
+      originalCurrencyCode: "GBP",
+      originalAmountMinor: 1200,
+    });
+    expect(db.prepare("SELECT 1 FROM currency_ledgers WHERE currency_code='GBP'").get()).toBeUndefined();
+  });
+
+  it("rejects original currency equal to the account currency", async () => {
+    const usd = createAccount({ name: "USD same original", type: "cash", currencyCode: "USD", startingBalance: 0 });
+    const before = db.prepare("SELECT COUNT(*) c FROM transactions WHERE is_start=0").get().c;
+    const result = await call("POST", "/api/transactions", {
+      accountId: usd,
+      date: DAY,
+      amount: -2200,
+      originalCurrencyCode: "USD",
+      originalAmountMinor: 2200,
+    });
+    expectCurrencyError(result, "original_currency_matches_account");
+    expect(db.prepare("SELECT COUNT(*) c FROM transactions WHERE is_start=0").get().c).toBe(before);
+  });
+
+  it("does not derive a booked USD amount from a merchant EUR amount", async () => {
+    const usd = createAccount({ name: "USD no fx derive", type: "creditCard", currencyCode: "USD", startingBalance: 0 });
+    const before = db.prepare("SELECT COUNT(*) c FROM transactions WHERE is_start=0").get().c;
+    const result = await call("POST", "/api/transactions", {
+      accountId: usd,
+      date: DAY,
+      originalCurrencyCode: "EUR",
+      originalAmountMinor: 2000,
+    });
+    expectCurrencyError(result, "amount_required");
+    expect(db.prepare("SELECT COUNT(*) c FROM transactions WHERE is_start=0").get().c).toBe(before);
+  });
 });
 
 describe("POST /api/transactions cross-currency transfers", () => {
