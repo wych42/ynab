@@ -265,7 +265,7 @@ export function TransactionsPage() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 px-4 pt-4 md:px-6">
-        <label className="text-sm">{lang === "zh" ? "账户入账币种" : "Account booking currency"} <select aria-label={lang === "zh" ? "账户入账币种" : "Account booking currency"} className={searchCls + " w-auto"} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{lang === "zh" ? "全部币种" : "All currencies"}</option>{boot.enabledCurrencies.map(code => <option key={code}>{code}</option>)}</select></label>
+        <label className="text-sm">{t("txp_bookingCurrency")} <select aria-label={t("txp_bookingCurrency")} className={searchCls + " w-auto"} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{t("mc_allCurrencies")}</option>{boot.enabledCurrencies.map(code => <option key={code}>{code}</option>)}</select></label>
         <div className="relative w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className={"pl-8 " + searchCls} placeholder={t("txp_search")} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />

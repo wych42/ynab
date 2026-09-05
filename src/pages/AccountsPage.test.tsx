@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { cleanup, render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import type { Account, Bootstrap, CurrencyRecord } from "../types";
 import { formatMoney } from "../money";
+import { makeT } from "../i18n";
 
 const SUPPORTED: CurrencyRecord[] = [
   { code: "CNY", exponent: 2, enabledByDefault: true },
@@ -58,11 +59,7 @@ vi.mock("../store", () => ({
   useApp: () => ({
     boot: h.boot,
     lang: h.lang,
-    t: (k: string, v?: Record<string, string | number>) => {
-      const mapped: Record<string, string> = { account_tagOnBudget: "预算内", account_tagOffBudget: "预算外" };
-      const base = mapped[k] ?? k;
-      return v ? `${base}:${JSON.stringify(v)}` : base;
-    },
+    t: makeT(h.lang),
     refreshBoot: h.refreshBoot,
     toast: h.toast,
   }),
@@ -93,7 +90,7 @@ it.each([ ["zh", "查看家庭净资产"], ["en", "View household net worth"] ] 
 it("opens the creation form with the currency promised by the empty-ledger link", async () => {
   window.history.replaceState({}, "", "#/accounts?createCurrency=EUR");
   render(<AccountsPage />);
-  expect((await screen.findByLabelText("account_currency") as HTMLSelectElement).value).toBe("EUR");
+  expect((await screen.findByLabelText(makeT("zh")("account_currency")) as HTMLSelectElement).value).toBe("EUR");
 });
 
 it("filters only the account list by its own currency", async () => {
@@ -108,8 +105,8 @@ it("filters only the account list by its own currency", async () => {
 describe("AccountsPage 新建账户弹窗", () => {
   it("类型下拉的每个选项都标注预算内/预算外", async () => {
     render(<AccountsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "account_add" }));
-    const select = (await screen.findByLabelText("account_type")) as HTMLSelectElement;
+    fireEvent.click(await screen.findByRole("button", { name: makeT("zh")("account_add") }));
+    const select = (await screen.findByLabelText(makeT("zh")("account_type"))) as HTMLSelectElement;
     expect([...select.options].map((o) => o.textContent)).toEqual([
       "支票账户 · 预算内",
       "储蓄账户 · 预算内",
@@ -128,11 +125,11 @@ describe("AccountsPage 新建账户弹窗", () => {
 
   it("选择带标注的类型后提交，仍发送对应的类型值", async () => {
     render(<AccountsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "account_add" }));
-    const nameInput = await screen.findByLabelText("account_name");
+    fireEvent.click(await screen.findByRole("button", { name: makeT("zh")("account_add") }));
+    const nameInput = await screen.findByLabelText(makeT("zh")("account_name"));
     fireEvent.change(nameInput, { target: { value: "工资卡" } });
-    fireEvent.change(screen.getByLabelText("account_type"), { target: { value: "savings" } });
-    fireEvent.click(screen.getByRole("button", { name: "account_create" }));
+    fireEvent.change(screen.getByLabelText(makeT("zh")("account_type")), { target: { value: "savings" } });
+    fireEvent.click(screen.getByRole("button", { name: makeT("zh")("account_create") }));
     await waitFor(() =>
       expect(h.createAccount).toHaveBeenCalledWith(
         expect.objectContaining({ name: "工资卡", type: "savings" })
@@ -142,18 +139,18 @@ describe("AccountsPage 新建账户弹窗", () => {
 
   it("币种选项只来自已启用集合，默认取净资产默认币种，CAD 不可选", async () => {
     render(<AccountsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "account_add" }));
-    const currency = (await screen.findByLabelText("account_currency")) as HTMLSelectElement;
+    fireEvent.click(await screen.findByRole("button", { name: makeT("zh")("account_add") }));
+    const currency = (await screen.findByLabelText(makeT("zh")("account_currency"))) as HTMLSelectElement;
     expect(currency.value).toBe("CNY");
     expect([...currency.options].map((o) => o.value)).toEqual(["CNY", "USD", "SGD", "EUR", "JPY"]);
     expect([...currency.options].map((o) => o.value)).not.toContain("CAD");
     expect([...currency.options].map((o) => o.value)).not.toContain("GBP");
-    expect(screen.getByRole("link", { name: "account_manageCurrencies" }).getAttribute("href")).toBe("#/settings");
+    expect(screen.getByRole("link", { name: makeT("zh")("account_manageCurrencies") }).getAttribute("href")).toBe("#/settings");
 
-    fireEvent.change(screen.getByLabelText("account_name"), { target: { value: "美元卡" } });
+    fireEvent.change(screen.getByLabelText(makeT("zh")("account_name")), { target: { value: "美元卡" } });
     fireEvent.change(currency, { target: { value: "USD" } });
-    fireEvent.change(screen.getByLabelText("account_startBalance"), { target: { value: "12.34" } });
-    fireEvent.click(screen.getByRole("button", { name: "account_create" }));
+    fireEvent.change(screen.getByLabelText(makeT("zh")("account_startBalance")), { target: { value: "12.34" } });
+    fireEvent.click(screen.getByRole("button", { name: makeT("zh")("account_create") }));
 
     await waitFor(() =>
       expect(h.createAccount).toHaveBeenCalledWith({
@@ -168,11 +165,11 @@ describe("AccountsPage 新建账户弹窗", () => {
 
   it("JPY 拒绝小数输入，且不调用创建接口", async () => {
     render(<AccountsPage />);
-    fireEvent.click(await screen.findByRole("button", { name: "account_add" }));
-    fireEvent.change(await screen.findByLabelText("account_name"), { target: { value: "日元现金" } });
-    fireEvent.change(screen.getByLabelText("account_currency"), { target: { value: "JPY" } });
-    fireEvent.change(screen.getByLabelText("account_startBalance"), { target: { value: "123.4" } });
-    fireEvent.click(screen.getByRole("button", { name: "account_create" }));
+    fireEvent.click(await screen.findByRole("button", { name: makeT("zh")("account_add") }));
+    fireEvent.change(await screen.findByLabelText(makeT("zh")("account_name")), { target: { value: "日元现金" } });
+    fireEvent.change(screen.getByLabelText(makeT("zh")("account_currency")), { target: { value: "JPY" } });
+    fireEvent.change(screen.getByLabelText(makeT("zh")("account_startBalance")), { target: { value: "123.4" } });
+    fireEvent.click(screen.getByRole("button", { name: makeT("zh")("account_create") }));
 
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
     expect(h.createAccount).not.toHaveBeenCalled();
@@ -196,8 +193,8 @@ describe("AccountsPage 按账户币种展示，不把异币余额加在一起", 
 
     render(<AccountsPage />);
 
-    const onBudget = screen.getByText("sidebar_onBudget").closest("section");
-    const tracking = screen.getByText("sidebar_tracking").closest("section");
+    const onBudget = screen.getByText(makeT("zh")("sidebar_onBudget")).closest("section");
+    const tracking = screen.getByText(makeT("zh")("sidebar_tracking")).closest("section");
     expect(onBudget).toBeTruthy();
     expect(tracking).toBeTruthy();
 

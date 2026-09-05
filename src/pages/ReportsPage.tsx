@@ -331,7 +331,7 @@ function InvestmentReportPage() {
         <p>{t("rep_noInvestments")}</p>
         <a href="#/accounts" className="mt-2 inline-block text-brand-600 underline">{t("rep_addInvestment")}</a>
       </div>}
-      <div role="region" aria-label={lang === "zh" ? "投资账户列表" : "Investment accounts"} tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-card">
+      <div role="region" aria-label={t("mc_investmentAccounts")} tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-card">
         <table className="w-full min-w-[720px] text-left text-[13px]">
           <thead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
             <tr>
@@ -439,7 +439,7 @@ function NetWorthPage() {
           <span>{t("rep_asOf", { date: asOf })}</span>
           <input
             type="date"
-            aria-label="asOf"
+            aria-label={t("rep_valuationDate")}
             className="rounded-md border border-slate-200 px-2 py-1 text-sm"
             value={asOf}
             onChange={(e) => pushHash(formatHash("/reports/net-worth", { currency: currency ?? "", asOf: e.target.value }))}
@@ -495,7 +495,7 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card title={t("rep_incomeExpense")}>
-          <ChartData title={t("rep_incomeExpense")} headers={[lang === "zh" ? "月份" : "Month", t("rep_income"), t("rep_expense")]} rows={ie.map((row, index) => [data.months[index], money(row.income), money(row.expense)])} />
+          <ChartData title={t("rep_incomeExpense")} headers={[t("mc_month"), t("rep_income"), t("rep_expense")]} rows={ie.map((row, index) => [data.months[index], money(row.income), money(row.expense)])} />
           <ResponsiveContainer width="100%" height={260}>
             <BarChart data={ie} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={3}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eef1f6" vertical={false} />
@@ -511,7 +511,7 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
         </Card>
 
         <Card title={t("rep_breakdown")}>
-          <ChartData title={t("rep_breakdown")} headers={[lang === "zh" ? "分类" : "Category", t("rep_expense")]} rows={pie.map(row => [row.name, money(row.value)])} />
+          <ChartData title={t("rep_breakdown")} headers={[t("write_category"), t("rep_expense")]} rows={pie.map(row => [row.name, money(row.value)])} />
           {pie.length === 0 ? (
             <EmptyChart />
           ) : (
@@ -678,7 +678,7 @@ function NetWorthReportView({ data }: { data: NetWorthReport }) {
       {history.length > 0 ? (
         <div className="mb-5">
           <Card title={t("rep_netWorth")}>
-            <ChartData title={t("rep_netWorth")} headers={[lang === "zh" ? "月份" : "Month", t("rep_netWorth")]} rows={history.map(row => [row.month, row.net == null ? t("rep_incomplete") : money(row.net)])} />
+            <ChartData title={t("rep_netWorth")} headers={[t("mc_month"), t("rep_netWorth")]} rows={history.map(row => [row.month, row.net == null ? t("rep_incomplete") : money(row.net)])} />
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                 <defs>

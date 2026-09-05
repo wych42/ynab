@@ -429,7 +429,7 @@ export function BudgetPage() {
 
         </div>
 
-        <div role="region" aria-label={lang === "zh" ? "预算表" : "Budget table"} tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-auto">
+        <div role="region" aria-label={t("mc_budgetTable")} tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-auto">
           <div className={needsFunding ? "min-w-0" : "min-w-[1060px]"}>
           {/* Column headers scroll together with the category rows. */}
           {!needsFunding && <>
@@ -462,7 +462,7 @@ export function BudgetPage() {
 
         {/* Table body */}
         <div className="flex-1 space-y-4 px-3 py-4">
-          {needsFunding ? <div role="status" className="max-w-xl rounded-xl border bg-white p-6"><h2 className="font-semibold">{lang === "zh" ? `${currency} 账户尚无可分配资金` : `${currency} accounts have no funds to assign yet`}</h2><p className="my-3 text-sm text-slate-600">{lang === "zh" ? "账户余额和预算金额均为零。请在账户中录入银行期初余额或实际收入，再分配预算。" : "Account balances and budget amounts are zero. Record an opening balance or actual income in an account before assigning funds."}</p><a className="text-brand-600 underline" href={`#/accounts/${boot.accounts.find(a => !a.closed && a.on_budget && a.currencyCode === currency)?.id}`}>{lang === "zh" ? "打开账户录入资金" : "Open account to record funds"}</a></div> : cur.groups.map((g) => (
+          {needsFunding ? <div role="status" className="max-w-xl rounded-xl border bg-white p-6"><h2 className="font-semibold">{t("budget_noFunds", { code: currency })}</h2><p className="my-3 text-sm text-slate-600">{t("mc_noFundsHint")}</p><a className="text-brand-600 underline" href={`#/accounts/${boot.accounts.find(a => !a.closed && a.on_budget && a.currencyCode === currency)?.id}`}>{t("mc_recordFunds")}</a></div> : cur.groups.map((g) => (
             <GroupBlock
               key={g.id}
               group={g}
@@ -487,7 +487,7 @@ export function BudgetPage() {
               }}
             />
           ))}
-          {boot.groups.some(g => g.categories.some(c => c.hidden)) && <details className="rounded border bg-white p-3 text-sm"><summary>{lang === "zh" ? "已隐藏分类" : "Hidden categories"}</summary>{boot.groups.flatMap(g => g.categories).filter(c => c.hidden).map(c => <div key={c.id} className="mt-2 flex items-center justify-between"><span>{c.name}</span><button className="text-brand-600" onClick={quietWrite(async () => { if (!confirm(t("budget_categoryShare"))) return; await writeApi.updateCategory(c.id, { hidden: false }); await Promise.all([load(base, currency), refreshBoot()]); })}>{lang === "zh" ? "恢复分类" : "Restore category"}</button></div>)}</details>}
+          {boot.groups.some(g => g.categories.some(c => c.hidden)) && <details className="rounded border bg-white p-3 text-sm"><summary>{t("mc_hiddenCategories")}</summary>{boot.groups.flatMap(g => g.categories).filter(c => c.hidden).map(c => <div key={c.id} className="mt-2 flex items-center justify-between"><span>{c.name}</span><button className="text-brand-600" onClick={quietWrite(async () => { if (!confirm(t("budget_categoryShare"))) return; await writeApi.updateCategory(c.id, { hidden: false }); await Promise.all([load(base, currency), refreshBoot()]); })}>{t("write_restoreCategory")}</button></div>)}</details>}
         </div>
           </div>
         </div>
@@ -1142,7 +1142,7 @@ function Inspector({
                   if (currency) onApply(await api.budget(data.month, currency));
                   await refreshBoot();
                   onClose();
-                })}>{lang === "zh" ? "隐藏分类" : "Hide category"}</button>
+                })}>{t("write_hideCategory")}</button>
               </div>
             )}
 

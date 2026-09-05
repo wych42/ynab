@@ -1,4 +1,4 @@
-import type { Lang } from "./i18n";
+import { makeT, type Lang } from "./i18n";
 import { formatMoney, getExponent } from "./money";
 
 let currencySymbol = "¥";
@@ -82,11 +82,11 @@ export function formatMinorInput(amountMinor: number, currencyCode: string): str
 }
 
 export function displayFxSource(source: string | null | undefined, sameCurrency = false, lang?: string): string {
-  const en = lang === "en";
-  if (sameCurrency || source === "identity") return en ? "No conversion needed" : "无需换算";
-  if (source === "manual") return en ? "Manual rate" : "人工汇率";
-  if (source === "frankfurter_ecb") return en ? "European Central Bank reference rate" : "欧洲央行参考汇率";
-  return source ? (en ? "Other reference rate" : "其他参考汇率") : "—";
+  const t = makeT(lang === "en" ? "en" : "zh");
+  if (sameCurrency || source === "identity") return t("fx_identity");
+  if (source === "manual") return t("fx_manual");
+  if (source === "frankfurter_ecb") return t("fx_ecb");
+  return source ? t("fx_other") : "—";
 }
 
 export function displayFxRate(from: string, to: string, rate: string, lang?: string): string {

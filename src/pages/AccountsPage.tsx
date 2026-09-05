@@ -148,14 +148,14 @@ export function AccountsPage() {
           <h1 className="text-xl font-bold text-slate-900">{t("nav_accounts")}</h1>
           <p className="mt-0.5 text-[13px] text-slate-400">{t("common_allAccounts")}</p>
           <a href="#/reports/net-worth" className="mt-2 inline-block text-sm font-medium text-brand-600 underline-offset-2 hover:underline">
-            {lang === "zh" ? "查看家庭净资产" : "View household net worth"}
+            {t("mc_viewNetWorth")}
           </a>
         </div>
         <Btn variant="primary" onClick={openCreate}>
           <Plus size={15} /> {t("account_add")}
         </Btn>
       </div>
-      <label className="mb-4 block text-sm">{lang === "zh" ? "账户币种筛选" : "Filter by account currency"} <select aria-label={lang === "zh" ? "账户币种筛选" : "Filter by account currency"} className={inputCls} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{lang === "zh" ? "全部币种" : "All currencies"}</option>{enabled.map(code => <option key={code}>{code}</option>)}</select></label>
+      <label className="mb-4 block text-sm">{t("acc_currencyFilter")} <select aria-label={t("acc_currencyFilter")} className={inputCls} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{t("mc_allCurrencies")}</option>{enabled.map(code => <option key={code}>{code}</option>)}</select></label>
 
       {accs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-400">
