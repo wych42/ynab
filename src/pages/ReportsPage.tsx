@@ -82,14 +82,20 @@ function currencyChipClass(selected: boolean) {
   }`;
 }
 
-function CurrencyFallbackNotice({ notice }: { notice: CurrencyNotice | null }) {
+type ReportCurrencyNotice = CurrencyNotice & {
+  section: "cashflow" | "net-worth";
+  displayedCurrency: string;
+};
+
+function CurrencyFallbackNotice({ notice }: { notice: ReportCurrencyNotice | null }) {
   const { t } = useApp();
   if (!notice) return null;
+  const fallback = notice.section === "cashflow" ? t("rep_viewAll") : notice.fallback;
   return (
     <div role="status" aria-live="polite" className="mb-3 text-xs font-medium text-amber-700">
       {notice.reason === "disabled"
-        ? t("currency_disabled", { code: notice.requested, fallback: notice.fallback })
-        : t("currency_unsupported", { code: notice.requested, fallback: notice.fallback })}
+        ? t("currency_disabled", { code: notice.requested, fallback })
+        : t("currency_unsupported", { code: notice.requested, fallback })}
     </div>
   );
 }
@@ -99,7 +105,7 @@ export function ReportsPage() {
   const route = useHashRoute();
   const parsed = parseHash(route);
   const section = reportsSection(parsed.path);
-  const [notice, setNotice] = useState<CurrencyNotice | null>(null);
+  const [notice, setNotice] = useState<ReportCurrencyNotice | null>(null);
   const enabled = boot?.enabledCurrencies ?? [];
   const supported = (boot?.supportedCurrencies ?? []).map((item) => item.code);
   const fallback = boot?.settings.reportingCurrency && enabled.includes(boot.settings.reportingCurrency)
@@ -107,12 +113,14 @@ export function ReportsPage() {
     : enabled[0] ?? null;
 
   useEffect(() => {
-    if (section === "investments") return;
+    if (section === "investments") {
+      setNotice(null);
+      return;
+    }
     const requested = parsed.query.currency;
-    if (!requested) return;
     const coerced = coerceEnabledCurrency(requested, enabled, supported, fallback);
     if (coerced.notice && coerced.currency) {
-      setNotice(coerced.notice);
+      setNotice({ ...coerced.notice, section, displayedCurrency: section === "cashflow" ? "" : coerced.currency });
       if (section === "net-worth") {
         replaceHash(formatHash("/reports/net-worth", { currency: coerced.currency, asOf: parsed.query.asOf || "" }));
       } else if (section === "cashflow") {
@@ -122,7 +130,9 @@ export function ReportsPage() {
       }
       return;
     }
-    setNotice(null);
+    // Retain the explanation on the normalized destination. Clear it only when
+    // navigation changes the displayed section or currency, not on replace/rerender.
+    setNotice(previous => previous?.section === section && previous.displayedCurrency === (requested || "") ? previous : null);
   }, [parsed.query.currency, parsed.query.asOf, section, enabled, supported, fallback]);
 
   return (

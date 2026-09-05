@@ -6,7 +6,7 @@ import { displayFxSource } from "../format";
 const h = vi.hoisted(() => ({ overview: vi.fn(), detail: vi.fn(), investments: vi.fn(), netWorth: vi.fn(), lang: "en" as "en" | "zh" }));
 vi.mock("../api", () => ({ api: { cashflowOverview: h.overview, cashflowDetail: h.detail, investments: h.investments, netWorthReport: h.netWorth } }));
 vi.mock("../store", () => {
-  const boot = { settings: { reportingCurrency: "USD" }, enabledCurrencies: ["USD", "SGD"], supportedCurrencies: [{ code: "USD" }, { code: "SGD" }, { code: "GBP" }] };
+  const boot = { settings: { reportingCurrency: "USD" }, enabledCurrencies: ["USD", "SGD"], supportedCurrencies: [{ code: "USD" }, { code: "SGD" }, { code: "GBP" }, { code: "CAD" }] };
   return { useApp: () => ({ lang: h.lang, t: makeT(h.lang), boot }) };
 });
 import { ReportsPage } from "./ReportsPage";
@@ -112,4 +112,28 @@ it("translates system uncategorized breakdown rows without renaming user categor
   expect(table.textContent).toContain("未分类");
   expect(table.textContent).toContain("15.00");
   expect(table.textContent).toContain("22.00");
+});
+it.each([
+  ["en", "CAD", "cashflow"], ["en", "XYZ", "cashflow"],
+  ["zh", "CAD", "cashflow"], ["zh", "XYZ", "cashflow"],
+  ["en", "CAD", "net-worth"], ["en", "XYZ", "net-worth"],
+  ["zh", "CAD", "net-worth"], ["zh", "XYZ", "net-worth"],
+] as const)("keeps an accurate %s notice after replacing %s on %s", async (lang, code, section) => {
+  h.lang = lang;
+  h.overview.mockResolvedValue({ currencies: [] });
+  h.detail.mockReturnValue(new Promise(() => {}));
+  h.netWorth.mockReturnValue(new Promise(() => {}));
+  window.location.hash = `#/reports/${section}?currency=${code}${section === "net-worth" ? "&asOf=2026-09-04" : ""}`;
+  const length = history.length;
+  const { rerender } = render(<ReportsPage />);
+  const expectedHash = section === "net-worth" ? "#/reports/net-worth?currency=USD&asOf=2026-09-04" : "#/reports/cashflow";
+  await waitFor(() => expect(window.location.hash).toBe(expectedHash));
+  rerender(<ReportsPage />);
+  const fallback = section === "net-worth" ? "USD" : lang === "zh" ? "全部" : "All";
+  const expected = lang === "zh" ? `${code} ${code === "CAD" ? "已停用" : "不受支持"}，已显示 ${fallback}`
+    : `${code} ${code === "CAD" ? "is disabled" : "is not supported"}, showing ${fallback}`;
+  expect(screen.getByRole("status").textContent).toBe(expected);
+  expect(history.length).toBe(length);
+  await act(async () => { window.location.hash = "#/reports/cashflow?currency=SGD"; window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  expect(screen.queryByRole("status")).toBeNull();
 });
