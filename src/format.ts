@@ -81,11 +81,12 @@ export function formatMinorInput(amountMinor: number, currencyCode: string): str
   return `${sign}${whole}.${frac}`;
 }
 
-export function displayFxSource(source: string | null | undefined, sameCurrency = false): string {
-  if (sameCurrency || source === "identity") return "无需换算";
-  if (source === "manual") return "人工汇率";
-  if (source === "frankfurter_ecb") return "欧洲央行参考汇率";
-  return source ?? "";
+export function displayFxSource(source: string | null | undefined, sameCurrency = false, lang?: string): string {
+  const en = lang === "en";
+  if (sameCurrency || source === "identity") return en ? "No conversion needed" : "无需换算";
+  if (source === "manual") return en ? "Manual rate" : "人工汇率";
+  if (source === "frankfurter_ecb") return en ? "European Central Bank reference rate" : "欧洲央行参考汇率";
+  return source ? (en ? "Other reference rate" : "其他参考汇率") : "—";
 }
 
 export function displayFxRate(from: string, to: string, rate: string, lang?: string): string {

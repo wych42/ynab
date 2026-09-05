@@ -395,7 +395,7 @@ export function SettingsPage() {
             <div>
               <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxProvider")}</span>
               <p data-testid="fx-provider" className="text-sm font-medium text-slate-700">
-                {fxStatus?.defaultProvider ? displayFxSource(fxStatus.defaultProvider) : "—"}
+                {fxStatus?.defaultProvider ? displayFxSource(fxStatus.defaultProvider, false, lang) : "—"}
               </p>
             </div>
             <div>
@@ -407,7 +407,7 @@ export function SettingsPage() {
             <div>
               <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxLatestSource")}</span>
               <p data-testid="fx-latest-source" className="text-sm font-medium text-slate-700">
-                {fxStatus?.latestSource ? displayFxSource(fxStatus.latestSource) : "—"}
+                {fxStatus?.latestSource ? displayFxSource(fxStatus.latestSource, false, lang) : "—"}
               </p>
             </div>
             <Btn aria-label={t("settings_fxRefresh")} disabled={fxBusy} onClick={refreshFx}>

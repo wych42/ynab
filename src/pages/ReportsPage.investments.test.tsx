@@ -100,8 +100,8 @@ describe("Investment report", () => {
   it("has an independent nav entry and the field whitelist", async () => {
     render(<ReportsPage />);
     expect(screen.getByRole("link", { name: "投资" })).toBeTruthy();
-    expect(await screen.findByText("先锋券商")).toBeTruthy();
-    expect(screen.getByText("SGD 投资")).toBeTruthy();
+    expect(await screen.findByRole("link", { name: "先锋券商" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SGD 投资" })).toBeTruthy();
     const pageText = (document.body.textContent ?? "").replace(/\u00a0/g, " ");
     expect(pageText).toContain(formatMoney(1_000_000, "USD", { locale: "zh-CN" }).replace(/\u00a0/g, " "));
     expect(pageText).toContain(formatMoney(200_000, "SGD", { locale: "zh-CN" }).replace(/\u00a0/g, " "));

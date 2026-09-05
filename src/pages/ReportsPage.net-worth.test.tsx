@@ -291,7 +291,7 @@ describe("ReportsPage native and consolidated views", () => {
     expect(screen.queryByText("盒马")).toBeNull();
     expect(await screen.findByText(formatMoney(20_400_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
     expect(screen.getByText(formatMoney(500_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
-    expect(screen.getByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
+    expect(screen.getByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }), { selector: "div" })).toBeTruthy();
     expect(screen.getByText("家庭 CNY 日常账户")).toBeTruthy();
     expect(screen.getByText("USD 投资账户")).toBeTruthy();
     expect(screen.getByText(formatMoney(1_000_000, "USD", { locale: "zh-CN" }))).toBeTruthy();
@@ -316,7 +316,7 @@ describe("ReportsPage native and consolidated views", () => {
   it("hides unified totals when incomplete and still lists native balances plus missing pairs", async () => {
     h.netWorthReport.mockResolvedValue(incompleteNetWorth);
     await openNetWorth();
-    expect(await screen.findByText("rep_incomplete")).toBeTruthy();
+    expect(await screen.findByText("rep_incomplete", { selector: "p" })).toBeTruthy();
     expect(screen.getByText("SGD 日常账户")).toBeTruthy();
     expect(screen.getAllByText(formatMoney(10_000_000, "CNY", { locale: "zh-CN" })).length).toBeGreaterThan(0);
     const sgdNative = formatMoney(500_000, "SGD", { locale: "zh-CN" }).replace(/\u00a0/g, " ");
@@ -369,7 +369,7 @@ describe("ReportsPage native and consolidated views", () => {
     await openNetWorth();
     expect(await screen.findByText(formatMoney(20_400_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
     expect(screen.getByText(formatMoney(500_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
-    expect(screen.getByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }))).toBeTruthy();
+    expect(screen.getByText(formatMoney(19_900_000, "CNY", { locale: "zh-CN" }), { selector: "div" })).toBeTruthy();
     expect(screen.getByText("rep_now")).toBeTruthy();
     expect(screen.getByText("rep_historyMissing")).toBeTruthy();
     expect(
