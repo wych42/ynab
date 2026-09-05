@@ -1,11 +1,11 @@
-import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDataDir } from "./test-support/database.mjs";
 import { startTestApi } from "./test-support/http.mjs";
 
 process.env.DATA_DIR = makeTempDataDir("ynab-investment-list-");
 
 const { api } = await import("./routes.mjs");
-const { db, createAccount } = await import("./db.mjs");
+const { db, createAccount, setSetting } = await import("./db.mjs");
 const { reconcileAccount, postTransfer } = await import("./currency-ledger.mjs");
 
 const server = await startTestApi(api);
@@ -20,6 +20,7 @@ function wipe() {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   wipe();
 });
 
@@ -29,6 +30,21 @@ function forbiddenKeys(value) {
 }
 
 describe("GET /api/investments", () => {
+  it("opens without query parameters using today's household date and twelve months", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-04T16:30:00Z"));
+    setSetting("timezone", "Asia/Singapore");
+    const id = createAccount({ name: "Default entry", type: "investment", currencyCode: "USD", startingBalance: 12345, startingDate: "2026-09-05" });
+    const result = await call("GET", "/api/investments");
+    expect(result.status).toBe(200);
+    expect(result.json).toMatchObject({ asOf: "2026-09-05", months: 12 });
+    expect(result.json.accounts).toEqual([expect.objectContaining({ accountId: id, balanceMinor: 12345 })]);
+  });
+  it.each([["asOf=", "invalid_date"], ["asOf=2026-02-30", "invalid_date"], ["months=", "invalid_months"], ["months=0", "invalid_months"]])("rejects explicit invalid query %s", async (query, code) => {
+    const result = await call("GET", `/api/investments?${query}`);
+    expect(result.status).toBe(400);
+    expect(result.json.code).toBe(code);
+  });
   it("lists investment accounts with the native field whitelist", async () => {
     const usd = createAccount({
       name: "先锋券商",

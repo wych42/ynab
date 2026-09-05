@@ -106,6 +106,7 @@ describe("Investment report", () => {
     expect(pageText).toContain(formatMoney(1_000_000, "USD", { locale: "zh-CN" }).replace(/\u00a0/g, " "));
     expect(pageText).toContain(formatMoney(200_000, "SGD", { locale: "zh-CN" }).replace(/\u00a0/g, " "));
     await waitFor(() => expect(h.investments).toHaveBeenCalled());
+    expect(h.investments).toHaveBeenCalledWith();
     expect(screen.queryByText(/收益|回报率|持仓|成本基础/)).toBeNull();
   });
 });

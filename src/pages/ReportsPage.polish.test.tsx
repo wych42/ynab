@@ -3,16 +3,16 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { makeT } from "../i18n";
 import { displayFxSource } from "../format";
-const h = vi.hoisted(() => ({ overview: vi.fn(), detail: vi.fn(), investments: vi.fn(), netWorth: vi.fn() }));
+const h = vi.hoisted(() => ({ overview: vi.fn(), detail: vi.fn(), investments: vi.fn(), netWorth: vi.fn(), lang: "en" as "en" | "zh" }));
 vi.mock("../api", () => ({ api: { cashflowOverview: h.overview, cashflowDetail: h.detail, investments: h.investments, netWorthReport: h.netWorth } }));
 vi.mock("../store", () => {
   const boot = { settings: { reportingCurrency: "USD" }, enabledCurrencies: ["USD", "SGD"], supportedCurrencies: [{ code: "USD" }, { code: "SGD" }, { code: "GBP" }] };
-  return { useApp: () => ({ lang: "en", t: makeT("en"), boot }) };
+  return { useApp: () => ({ lang: h.lang, t: makeT(h.lang), boot }) };
 });
 import { ReportsPage } from "./ReportsPage";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
 const account = (accountId: string, currencyCode: string, balanceMinor: number) => ({ accountId, name: accountId, currencyCode, balanceMinor, balanceChangeMinor: 0, contributionsMinor: 0, withdrawalsMinor: 0, netContributionsMinor: 0, latestValuationDate: null });
-beforeEach(() => { vi.resetAllMocks(); h.investments.mockResolvedValue({ accounts: [account("first", "USD", 100), account("second", "USD", 200), account("third", "SGD", 300)], subtotalsByCurrency: [] }); });
+beforeEach(() => { vi.resetAllMocks(); h.lang = "en"; h.investments.mockResolvedValue({ accounts: [account("first", "USD", 100), account("second", "USD", 200), account("third", "SGD", 300)], subtotalsByCurrency: [] }); });
 afterEach(cleanup);
 it("localizes FX sources without exposing unknown identifiers", () => {
   expect(displayFxSource("manual", false, "en")).toBe("Manual rate");
@@ -89,4 +89,27 @@ it("explains an empty investment result", async () => {
   h.investments.mockResolvedValue({ accounts: [], subtotalsByCurrency: [] });
   render(<ReportsPage />);
   expect(await screen.findByText("No investment accounts match these filters.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Go to Accounts to add an investment account" }).getAttribute("href")).toBe("#/accounts");
+});
+it.each(["en", "zh"] as const)("keeps net-worth and FX interpretation visible in %s", lang => {
+  h.lang = lang;
+  h.netWorth.mockReturnValue(new Promise(() => {}));
+  window.location.hash = "#/reports/net-worth?currency=USD&asOf=2026-09-04";
+  render(<ReportsPage />);
+  expect(screen.getByText(lang === "zh"
+    ? "净资产变化同时包含账户收支、投资估值调整和汇率变动，不能直接当作收入减支出。"
+    : "Net worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.")).toBeTruthy();
+  expect(screen.getByText(lang === "zh"
+    ? "参考汇率仅用于估值；实际换汇按银行两端真实入账金额记录。"
+    : "Reference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.")).toBeTruthy();
+});
+it("translates system uncategorized breakdown rows without renaming user categories", async () => {
+  window.location.hash = "#/reports/cashflow?currency=USD";
+  h.detail.mockResolvedValue({ currencyCode: "USD", months: ["2026-08"], income: [{ month: "2026-08", value: 0 }], expense: [{ month: "2026-08", value: 3700 }], breakdown: [{ name: "未分类", kind: "uncategorized", value: 1500 }, { name: "未分类", value: 2200 }], topPayees: [], incomeSources: [], ageOfMoney: 1 });
+  render(<ReportsPage />);
+  const table = await screen.findByRole("table", { name: "Spending Breakdown" });
+  expect(table.textContent).toContain("Uncategorized");
+  expect(table.textContent).toContain("未分类");
+  expect(table.textContent).toContain("15.00");
+  expect(table.textContent).toContain("22.00");
 });

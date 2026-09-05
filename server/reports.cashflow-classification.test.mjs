@@ -49,9 +49,15 @@ it("includes uncategorized spending in detail breakdown and payees", () => {
   transaction(-2200, expenseCategory);
   transaction(-1500);
   const detail = reports.buildCashflowDetail({ currencyCode: "USD", months: 1 });
-  expect(detail.breakdown).toContainEqual({ name: "未分类", value: 1500 });
+  expect(detail.breakdown).toContainEqual({ name: "未分类", kind: "uncategorized", value: 1500 });
   expect(detail.breakdown.reduce((sum, row) => sum + row.value, 0)).toBe(3700);
   expect(detail.topPayees).toContainEqual({ name: "Shop", value: 3700 });
+});
+it("does not mark a user category named 未分类 as a system category", () => {
+  db.prepare("UPDATE categories SET name='未分类' WHERE id=?").run(expenseCategory);
+  transaction(-2200, expenseCategory);
+  const detail = reports.buildCashflowDetail({ currencyCode: "USD", months: 1 });
+  expect(detail.breakdown).toContainEqual({ name: "未分类", value: 2200 });
 });
 it("does not put a historical income reversal in the expense breakdown", () => {
   transaction(-1500, incomeCategory);

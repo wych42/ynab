@@ -369,7 +369,7 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
     totalLiabilities: liabilities,
     netWorthNow: assets - liabilities,
     breakdown: [...breakdown.entries()]
-      .map(([id, value]) => ({ name: id == null ? "未分类" : catNames.get(id) || id, value }))
+      .map(([id, value]) => ({ name: id == null ? "未分类" : catNames.get(id) || id, value, ...(id == null ? { kind: "uncategorized" } : {}) }))
       .sort((x, y) => y.value - x.value)
       .slice(0, 10),
     topPayees: [...payeeMap.entries()]

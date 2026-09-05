@@ -317,7 +317,10 @@ function InvestmentReportPage() {
       </div>
       {filterNotice && <p role="status" className="mb-3 text-sm text-amber-700">{t("rep_filterUnavailable")}</p>}
       {!data ? <ReportPending error={error} retry={retry} /> : <>
-      {rows.length === 0 && <p className="mb-3 text-sm text-slate-500">{t("rep_noInvestments")}</p>}
+      {rows.length === 0 && <div className="mb-3 text-sm text-slate-500">
+        <p>{t("rep_noInvestments")}</p>
+        <a href="#/accounts" className="mt-2 inline-block text-brand-600 underline">{t("rep_addInvestment")}</a>
+      </div>}
       <div role="region" aria-label={lang === "zh" ? "投资账户列表" : "Investment accounts"} tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-card">
         <table className="w-full min-w-[720px] text-left text-[13px]">
           <thead className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -433,6 +436,10 @@ function NetWorthPage() {
           />
         </label>
       </div>
+      <div className="mb-4 space-y-1 text-xs leading-relaxed text-slate-500">
+        <p>{t("rep_netWorthChanges")}</p>
+        <p>{t("rep_fxValuationOnly")}</p>
+      </div>
       {data ? <NetWorthReportView data={data} /> : <ReportPending error={error} retry={retry} />}
     </div>
   );
@@ -450,7 +457,7 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
     _income: data.income[i]?.value ?? 0,
     _expense: data.expense[i]?.value ?? 0,
   }));
-  const pie = data.breakdown.filter((b) => b.value > 0).map((b) => ({ name: b.name, value: b.value, _raw: b.value }));
+  const pie = data.breakdown.filter((b) => b.value > 0).map((b) => ({ name: b.kind === "uncategorized" ? t("tx_uncategorized") : b.name, value: b.value, _raw: b.value }));
   const cur = data.income[data.income.length - 1];
 
   return (

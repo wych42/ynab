@@ -127,8 +127,11 @@ export function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    loadFxStatus().catch(() => {});
-  }, [loadFxStatus]);
+    let active = true;
+    setFxStatus(null);
+    api.getFxStatus().then(status => { if (active) setFxStatus(status); }).catch(() => {});
+    return () => { active = false; };
+  }, [boot?.settings.reportingCurrency, enabledCurrencies.join(",")]);
 
   const refreshFx = async () => {
     setFxBusy(true);
@@ -391,6 +394,19 @@ export function SettingsPage() {
       <Card title={t("settings_fxSection")} desc={t("settings_fxDesc")}>
         <div data-testid="fx-section" className="space-y-4">
           <p className="text-[11px] leading-relaxed text-slate-400">{t("settings_fxHint")}</p>
+          {fxStatus?.coverage && <div data-testid="fx-coverage" className="space-y-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+            {fxStatus.coverage.reportingCurrency ? <>
+              <p className="font-medium">{t("settings_fxCoverage", { date: fxStatus.coverage.asOf, currency: fxStatus.coverage.reportingCurrency })}</p>
+              <ul className="space-y-1">
+                {fxStatus.coverage.currencies.map(row => <li key={row.currencyCode}>
+                  {row.currencyCode} → {fxStatus.coverage?.reportingCurrency}：{" "}
+                  {row.status === "identity" ? displayFxSource("identity", true, lang)
+                    : row.status === "available" ? t("settings_fxCoverageAvailable", { date: row.rateDate ?? "—" })
+                    : t("settings_fxCoverageMissing")}
+                </li>)}
+              </ul>
+            </> : <p>{t("settings_fxCoverageNoDefault")}</p>}
+          </div>}
           <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
             <div>
               <span className="mb-1 block text-xs font-medium text-slate-500">{t("settings_fxProvider")}</span>

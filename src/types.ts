@@ -93,6 +93,11 @@ export type FxRateRecord = {
 };
 
 export type FxStatus = {
+  coverage?: {
+    reportingCurrency: string | null;
+    asOf: string;
+    currencies: { currencyCode: string; status: "identity" | "available" | "missing"; rateDate: string | null }[];
+  };
   defaultProvider: string;
   latestRateDate: string | null;
   latestSource: string | null;
@@ -209,7 +214,7 @@ export interface ReportsData {
   totalAssets: number;
   totalLiabilities: number;
   netWorthNow: number;
-  breakdown: { name: string; value: number }[];
+  breakdown: { name: string; value: number; kind?: "uncategorized" }[];
   topPayees: { name: string; value: number }[];
   incomeSources: { name: string; value: number }[];
   ageOfMoney: number;
@@ -233,7 +238,7 @@ export type CashflowDetail = {
   months: string[];
   income: { month: string; value: number }[];
   expense: { month: string; value: number }[];
-  breakdown: { name: string; value: number }[];
+  breakdown: { name: string; value: number; kind?: "uncategorized" }[];
   topPayees: { name: string; value: number }[];
   incomeSources: { name: string; value: number }[];
   ageOfMoney: number;

@@ -1,6 +1,6 @@
 import { Decimal } from "decimal.js";
 import { MoneyError, assertSupportedCurrency, convertAmount } from "./money.mjs";
-import { listEnabledCurrencyCodes } from "./currency-state.mjs";
+import { getCurrencyBootstrapState, listEnabledCurrencyCodes } from "./currency-state.mjs";
 import {
   DEFAULT_FX_PROVIDER_ID,
   DEFAULT_FX_TIMEOUT_MS,
@@ -419,6 +419,18 @@ export function createFxModule({
   }
 
   function getStatus() {
+    const { reportingCurrency, enabledCurrencies } = getCurrencyBootstrapState(db);
+    const asOf = today();
+    const coverage = {
+      reportingCurrency,
+      asOf,
+      currencies: reportingCurrency ? enabledCurrencies.map(currencyCode => {
+        if (currencyCode === reportingCurrency) return { currencyCode, status: "identity", rateDate: null };
+        // Inspect the same dated cache paths used by valuation, without fetching.
+        const picked = selectFromCache(currencyCode, reportingCurrency, asOf);
+        return { currencyCode, status: picked ? "available" : "missing", rateDate: picked?.rateDate ?? null };
+      }) : [],
+    };
     const rates = listRates();
     const latestRateDate = rates[0]?.rateDate ?? null;
     let latestSource = null;
@@ -430,6 +442,7 @@ export function createFxModule({
     }
     return {
       defaultProvider: getDefaultFxProviderId(),
+      coverage,
       latestRateDate,
       latestSource,
       rates,

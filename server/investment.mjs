@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth } from "./db.mjs";
+import { addMonths, endOfMonth, todayYmd } from "./db.mjs";
 import { parseYmd } from "./fx-providers.mjs";
 
 export class InvestmentError extends Error {
@@ -122,7 +122,7 @@ export function createInvestmentModule({ db } = {}) {
     };
   }
 
-  function listInvestmentAccounts({ asOf, months } = {}) {
+  function listInvestmentAccounts({ asOf = todayYmd(), months = 12 } = {}) {
     const asOfDate = parseYmd(asOf, InvestmentError, "invalid_date");
     const monthCount = parseMonths(months);
     const accounts = db

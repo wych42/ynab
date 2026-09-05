@@ -68,6 +68,22 @@ vi.mock("../store", () => ({
 
 import { SettingsPage } from "./SettingsPage";
 
+it("shows local cache coverage, missing pairs and identity outside diagnostics", async () => {
+  h.getFxStatus.mockResolvedValue(fxStatus({ coverage: { reportingCurrency: "CNY", asOf: "2026-09-05", currencies: [
+    { currencyCode: "CNY", status: "identity", rateDate: null },
+    { currencyCode: "USD", status: "available", rateDate: "2026-09-04" },
+    { currencyCode: "SGD", status: "missing", rateDate: null },
+  ] } }));
+  render(<SettingsPage />);
+  const coverage = await screen.findByTestId("fx-coverage");
+  expect(coverage.textContent).toContain("settings_fxCoverage");
+  expect(coverage.textContent).toContain("2026-09-05");
+  expect(coverage.textContent).toContain("USD → CNY");
+  expect(coverage.textContent).toContain("2026-09-04");
+  expect(coverage.textContent).toContain("settings_fxCoverageMissing");
+  expect(coverage.textContent).toContain("无需换算");
+});
+
 function fxStatus(overrides: Record<string, unknown> = {}) {
   return {
     defaultProvider: "frankfurter_ecb",
