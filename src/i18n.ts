@@ -1,6 +1,8 @@
 export type Lang = "zh" | "en";
 
 const zh = {
+  nav_openMenu: "打开导航菜单",
+  nav_closeMenu: "关闭导航菜单",
   appName: "小文预算",
   nav_budget: "预算",
   nav_accounts: "账户",
@@ -377,6 +379,8 @@ const zh = {
 };
 
 const en: typeof zh = {
+  nav_openMenu: "Open navigation menu",
+  nav_closeMenu: "Close navigation menu",
   appName: "Xiaowen Budget",
   nav_budget: "Budget",
   nav_accounts: "Accounts",

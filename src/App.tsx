@@ -12,7 +12,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { CurrencyMigrationPage } from "./pages/CurrencyMigrationPage";
 import { Spinner } from "./components/ui";
-import { useHashRoute } from "./hashRoute";
+import { parseHash, useHashRoute } from "./hashRoute";
 
 function Shell() {
   const route = useHashRoute();
@@ -39,7 +39,7 @@ function Shell() {
   }
 
   let page;
-  const detail = route.match(/^#\/accounts\/([\w-]+)$/);
+  const detail = parseHash(route).path.match(/^\/accounts\/([\w-]+)$/);
   if (detail) page = <AccountDetailPage id={detail[1]} />;
   else if (route.startsWith("#/accounts")) page = <AccountsPage />;
   else if (route.startsWith("#/transactions")) page = <TransactionsPage />;
@@ -50,7 +50,7 @@ function Shell() {
 
   return (
     <div className="flex h-full flex-col">
-      <MobileTopBar onMenu={() => setMobileNavOpen(true)} />
+      <MobileTopBar expanded={mobileNavOpen} onMenu={() => setMobileNavOpen(open => !open)} />
 
       <div className="flex min-h-0 flex-1">
         <Sidebar route={route} open={mobileNavOpen} onNavigate={() => setMobileNavOpen(false)} />
@@ -64,13 +64,14 @@ function Shell() {
   );
 }
 
-function MobileTopBar({ onMenu }: { onMenu: () => void }) {
+function MobileTopBar({ onMenu, expanded }: { onMenu: () => void; expanded: boolean }) {
   const { t } = useApp();
   return (
     <header className="flex shrink-0 items-center gap-2.5 border-b border-slate-200 bg-white px-3 py-2.5 shadow-sm md:hidden">
       <button
         onClick={onMenu}
-        aria-label="menu"
+        aria-label={t(expanded ? "nav_closeMenu" : "nav_openMenu")}
+        aria-expanded={expanded}
         className="rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-800"
       >
         <Menu size={19} />
