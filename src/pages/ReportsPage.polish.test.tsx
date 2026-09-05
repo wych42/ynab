@@ -11,6 +11,18 @@ vi.mock("../store", () => {
 });
 import { ReportsPage } from "./ReportsPage";
 globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+it.each(["cashflow", "net-worth"])("keeps the %s money chart in a keyboard-accessible local scroll region", async section => {
+  const value = -9_876_543_210_123;
+  h.detail.mockResolvedValue({ currencyCode: "USD", months: ["2026-08"], income: [{ month: "2026-08", value }], expense: [], breakdown: [], topPayees: [], incomeSources: [], ageOfMoney: 1 });
+  h.netWorth.mockResolvedValue({ reportingCurrency: "USD", asOf: "2026-09-04", complete: true, netWorthMinor: value, totalAssetsMinor: 0, totalLiabilitiesMinor: -value, history: [{ month: "2026-08", complete: true, netWorthMinor: value }], accounts: [], missing: [] });
+  window.location.hash = `#/reports/${section}?currency=USD&asOf=2026-09-04`;
+  render(<ReportsPage />);
+  const name = section === "cashflow" ? makeT("en")("rep_incomeExpense") : makeT("en")("rep_netWorth");
+  const region = await screen.findByRole("region", { name });
+  expect(region.tabIndex).toBe(0);
+  expect(region.className).toContain("overflow-x-auto");
+  expect(Number.parseInt((region.firstElementChild as HTMLElement).style.minWidth)).toBeGreaterThan(320);
+});
 const account = (accountId: string, currencyCode: string, balanceMinor: number) => ({ accountId, name: accountId, currencyCode, balanceMinor, balanceChangeMinor: 0, contributionsMinor: 0, withdrawalsMinor: 0, netContributionsMinor: 0, latestValuationDate: null });
 beforeEach(() => { vi.resetAllMocks(); h.lang = "en"; h.investments.mockResolvedValue({ accounts: [account("first", "USD", 100), account("second", "USD", 200), account("third", "SGD", 300)], subtotalsByCurrency: [] }); });
 afterEach(cleanup);

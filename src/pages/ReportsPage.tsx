@@ -22,6 +22,7 @@ import { coerceEnabledCurrency, formatHash, parseHash, pushHash, replaceHash, us
 import type { CashflowDetail, CashflowOverview, InvestmentList, NetWorthReport } from "../types";
 import { Spinner } from "../components/ui";
 import { householdToday, resolveNetWorthRoute, type ValuationDateNotice } from "../netWorthRoute";
+import { chartMoneyLayout } from "../chartMoneyLayout";
 
 const PALETTE = ["#6a63f0", "#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#8b5cf6", "#ec4899", "#84cc16", "#14b8a6", "#f97316"];
 
@@ -453,6 +454,7 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
   const { lang, t } = useApp();
   const currency = data.currencyCode;
   const money = (amount: number) => fmtMoney(amount, { currencyCode: currency, locale: localeForLang(lang) });
+  const chartLayout = chartMoneyLayout([...data.income, ...data.expense].map(row => row.value), money);
 
   const ie = data.months.map((m, i) => ({
     label: fmtMonthShort(m, lang),
@@ -490,11 +492,13 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card title={t("rep_incomeExpense")}>
           <ChartData title={t("rep_incomeExpense")} headers={[t("mc_month"), t("rep_income"), t("rep_expense")]} rows={ie.map((row, index) => [data.months[index], money(row.income), money(row.expense)])} />
+          <div role="region" aria-label={t("rep_incomeExpense")} tabIndex={0} className="max-w-full overflow-x-auto">
+          <div style={{ minWidth: chartLayout.minChartWidth }}>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={ie} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barGap={3}>
+            <BarChart data={ie} margin={{ top: 8, right: 8, left: 0, bottom: 0 }} barGap={3}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eef1f6" vertical={false} />
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={70}
+              <YAxis tick={{ fontSize: 11, fill: "#94a3b8" }} axisLine={false} tickLine={false} width={chartLayout.axisWidth}
                 tickFormatter={(v: number) => money(v)} />
               <Tooltip content={<IETooltip currency={currency} lang={lang} />} cursor={{ fill: "rgba(106,99,240,0.05)" }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
@@ -502,6 +506,8 @@ function CashflowDetailView({ data }: { data: CashflowDetail }) {
               <Bar dataKey="expense" name={t("rep_expense")} fill="#f43f5e" radius={[4, 4, 0, 0]} maxBarSize={26} />
             </BarChart>
           </ResponsiveContainer>
+          </div>
+          </div>
         </Card>
 
         <Card title={t("rep_breakdown")}>
@@ -603,6 +609,7 @@ function NetWorthReportView({ data }: { data: NetWorthReport }) {
     label: fmtMonthShort(point.month, lang),
     net: point.complete ? point.netWorthMinor : null,
   }));
+  const chartLayout = chartMoneyLayout(history.map(row => row.net), money);
   const historyMissing = data.history.flatMap((point) =>
     point.complete
       ? []
@@ -673,8 +680,10 @@ function NetWorthReportView({ data }: { data: NetWorthReport }) {
         <div className="mb-5">
           <Card title={t("rep_netWorth")}>
             <ChartData title={t("rep_netWorth")} headers={[t("mc_month"), t("rep_netWorth")]} rows={history.map(row => [row.month, row.net == null ? t("rep_incomplete") : money(row.net)])} />
+            <div role="region" aria-label={t("rep_netWorth")} tabIndex={0} className="max-w-full overflow-x-auto">
+            <div style={{ minWidth: chartLayout.minChartWidth }}>
             <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+              <AreaChart data={history} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <defs>
                   <linearGradient id="nwFxFill" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#6a63f0" stopOpacity={0.28} />
@@ -687,13 +696,15 @@ function NetWorthReportView({ data }: { data: NetWorthReport }) {
                   tick={{ fontSize: 11, fill: "#94a3b8" }}
                   axisLine={false}
                   tickLine={false}
-                  width={70}
+                  width={chartLayout.axisWidth}
                   tickFormatter={(v: number) => money(v)}
                 />
                 <Tooltip content={<MoneyTooltip currency={currency} lang={lang} />} cursor={{ stroke: "#c7d2fe" }} />
                 <Area type="monotone" dataKey="net" stroke="#6a63f0" strokeWidth={2.5} fill="url(#nwFxFill)" />
               </AreaChart>
             </ResponsiveContainer>
+            </div>
+            </div>
           </Card>
         </div>
       ) : null}
