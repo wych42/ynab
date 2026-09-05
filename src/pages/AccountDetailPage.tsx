@@ -1,3 +1,4 @@
+import { quietWrite, isWriteCancelled } from "../writeCancellation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
@@ -13,6 +14,8 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../api";
+import { useWriteClient } from "../useWriteClient";
+import type { WriteSnapshot } from "../writeContext";
 import { useApp } from "../store";
 import { fmtDate, formatAccountMoney, formatMinorInput, impliedRateText, parseAmountToCents, todayIso } from "../format";
 import { parseAmountToMinor } from "../money";
@@ -27,6 +30,8 @@ export function AccountDetailPage({ id }: { id: string }) {
   const [reg, setReg] = useState<{
     account: { name: string; type: string; balance: number; currencyCode?: string | null };
     transactions: Tx[];
+    ledgerRevisions?: Record<string, number>;
+    categoryRevision?: number;
   } | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,6 +40,7 @@ export function AccountDetailPage({ id }: { id: string }) {
   const [reconciling, setReconciling] = useState(false);
   const [summary, setSummary] = useState<InvestmentAccountView | null | undefined>(undefined);
   const saveRef = useRef(false);
+  const { client: api, conflictDialog } = useWriteClient(reg, lang, () => { saveRef.current = false; });
   const requestGen = useRef(0);
   const accMeta = boot?.accounts.find((a) => a.id === id);
   const isInvestmentAccount = accMeta?.type === "investment";
@@ -51,7 +57,7 @@ export function AccountDetailPage({ id }: { id: string }) {
     });
   }, [boot?.settings.timezone]);
 
-  const load = useCallback(async (opts?: { reset?: boolean }) => {
+  const load = useCallback(quietWrite(async (opts?: { reset?: boolean }) => {
     const gen = ++requestGen.current;
     const requestedId = id;
     if (opts?.reset) {
@@ -81,7 +87,7 @@ export function AccountDetailPage({ id }: { id: string }) {
     } else if (opts?.reset) {
       setSummary(null);
     }
-  }, [id, isInvestmentAccount, timezone]);
+  }), [id, isInvestmentAccount, timezone]);
 
   useEffect(() => {
     load({ reset: true }).catch(() => {});
@@ -113,7 +119,7 @@ export function AccountDetailPage({ id }: { id: string }) {
   // 对账弹窗里的“一并勾为已清算”只针对非转账流水，与后端 markCleared 的口径一致
   const unclearedCount = reg.transactions.filter((tx) => !tx.isStart && !tx.transferAccountId && tx.cleared === 0).length;
 
-  const saveNew = async () => {
+  const saveNew = quietWrite(async () => {
     if (saveRef.current) return;
     const payload = buildTxPayload(id, form, currencyCode, boot?.accounts ?? []);
     if (!payload) return;
@@ -122,19 +128,20 @@ export function AccountDetailPage({ id }: { id: string }) {
       await api.createTx(payload);
       setForm(emptyForm(boot?.settings.timezone));
       await Promise.all([load(), refreshBoot()]);
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     } finally {
       saveRef.current = false;
     }
-  };
+  });
 
   const startEdit = (tx: Tx) => {
     setEditingId(tx.id);
     setEditForm(formFromTx(tx, currencyCode, boot?.accounts ?? []));
   };
 
-  const saveEdit = async () => {
+  const saveEdit = quietWrite(async () => {
     if (!editingId) return;
     const payload = buildTxPayload(id, editForm, currencyCode, boot?.accounts ?? []);
     if (!payload) return;
@@ -142,20 +149,22 @@ export function AccountDetailPage({ id }: { id: string }) {
       await api.updateTx(editingId, payload);
       setEditingId(null);
       await Promise.all([load(), refreshBoot()]);
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
-  };
+  });
 
   return (
     <div className="flex h-full flex-col">
+      {conflictDialog}
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-4 pb-4 pt-5 shadow-card md:px-6">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
           <a href="#/accounts" className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <ArrowLeft size={18} />
           </a>
-          <HeaderName name={reg.account.name} onSave={async (n) => { await api.updateAccount(id, { name: n }); await refreshBoot(); await load(); }} />
+          <HeaderName name={reg.account.name} onSave={quietWrite(async (n) => { await api.updateAccount(id, { name: n }); await refreshBoot(); await load(); })} />
           {label && <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-500">{label[lang]}</span>}
           {canChangeCurrency ? (
             <label className="flex items-center gap-1.5 text-[11px] text-slate-500">
@@ -164,17 +173,18 @@ export function AccountDetailPage({ id }: { id: string }) {
                 aria-label={t("account_currency")}
                 className={`${inputCls} w-24 py-1 text-[12px]`}
                 value={currencyCode ?? ""}
-                onChange={async (e) => {
+                onChange={quietWrite(async (e) => {
                   const next = e.target.value;
                   if (!next || next === currencyCode) return;
                   try {
                     await api.updateAccount(id, { currencyCode: next });
                     await Promise.all([refreshBoot(), load()]);
                   } catch (err) {
+      if (isWriteCancelled(err)) return;
                     const code = err && typeof err === "object" && "code" in err ? String((err as { code: unknown }).code) : "";
                     toast(code === "account_currency_locked" ? t("account_currencyLocked") : t("common_error"), "err");
                   }
-                }}
+                })}
               >
                 {(boot.enabledCurrencies ?? []).map((code) => (
                   <option key={code} value={code}>
@@ -207,27 +217,29 @@ export function AccountDetailPage({ id }: { id: string }) {
                 <Check size={14} /> {t(isInvestmentAccount ? "account_updateValuation" : "account_reconcile")}
               </Btn>
               {!isCredit && (
-                <Btn onClick={async () => {
+                <Btn onClick={quietWrite(async () => {
                   if (!confirm(t("confirm_closeAccount"))) return;
                   try {
                     await api.updateAccount(id, { closed: accMeta?.closed !== 1 });
                     await refreshBoot();
                     toast("✓");
-                  } catch { toast(t("common_error"), "err"); }
-                }}>
+                  } catch (error) {
+      if (isWriteCancelled(error)) return; toast(t("common_error"), "err"); }
+                })}>
                   {accMeta?.closed === 1 ? <RotateCcw size={14} /> : <X size={14} />}
                   {accMeta?.closed === 1 ? t("account_reopen") : t("account_close")}
                 </Btn>
               )}
-              <Btn variant="danger" title={t("account_deleteWarn")} onClick={async () => {
+              <Btn variant="danger" title={t("account_deleteWarn")} onClick={quietWrite(async () => {
                 if (!confirm(lang === "zh" ? "确定删除该账户？" : "Delete this account?")) return;
                 try {
                   await api.deleteAccount(id);
                   location.hash = "#/accounts";
-                } catch {
+                } catch (error) {
+      if (isWriteCancelled(error)) return;
                   toast(t("account_deleteWarn"), "err");
                 }
-              }}>
+              })}>
                 <Trash2 size={14} />
               </Btn>
             </div>
@@ -259,15 +271,15 @@ export function AccountDetailPage({ id }: { id: string }) {
           onStartEdit={startEdit}
           onCancelEdit={() => setEditingId(null)}
           onSaveEdit={saveEdit}
-          onDelete={async (txid) => {
+          onDelete={quietWrite(async (txid) => {
             if (!confirm(t("confirm_deleteTx"))) return;
             await api.deleteTx(txid);
             await Promise.all([load(), refreshBoot()]);
-          }}
-          onToggleCleared={async (tx) => {
+          })}
+          onToggleCleared={quietWrite(async (tx) => {
             await api.setTxStatus(tx.id, tx.cleared === 1 ? 0 : 1);
             await Promise.all([load(), refreshBoot()]);
-          }}
+          })}
         />
 
         {/* New transaction form */}
@@ -287,15 +299,16 @@ export function AccountDetailPage({ id }: { id: string }) {
 
       {reconciling && (
         <ReconcileModal
+          snapshot={reg}
           id={id}
           balance={reg.account.balance}
           currencyCode={currencyCode}
           unclearedCount={unclearedCount}
           valuation={isInvestmentAccount}
           onClose={() => setReconciling(false)}
-          onDone={async () => {
+          onDone={quietWrite(async () => {
             await Promise.all([load(), refreshBoot()]);
-          }}
+          })}
         />
       )}
     </div>
@@ -403,6 +416,7 @@ function AmountCell({
 /* ------------------------- Reconcile ------------------------- */
 
 function ReconcileModal({
+  snapshot,
   id,
   balance,
   currencyCode,
@@ -411,6 +425,7 @@ function ReconcileModal({
   onClose,
   onDone,
 }: {
+  snapshot: WriteSnapshot;
   id: string;
   balance: number;
   currencyCode?: string | null;
@@ -425,6 +440,7 @@ function ReconcileModal({
   );
   const [markCleared, setMarkCleared] = useState(true);
   const [busy, setBusy] = useState(false);
+  const { client: api, conflictDialog } = useWriteClient(snapshot, lang, () => setBusy(false));
   let cents: number | null = null;
   if (currencyCode) {
     try {
@@ -437,7 +453,7 @@ function ReconcileModal({
   }
   const diff = cents === null ? null : cents - balance;
 
-  const submit = async () => {
+  const submit = quietWrite(async () => {
     if (cents === null || busy) return;
     setBusy(true);
     try {
@@ -445,15 +461,17 @@ function ReconcileModal({
       await onDone();
       toast("✓");
       onClose();
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     } finally {
       setBusy(false);
     }
-  };
+  });
 
   return (
     <Modal title={t(valuation ? "rec_valuationTitle" : "rec_title")} onClose={onClose}>
+      {conflictDialog}
       <div className="mb-3 flex items-center justify-between text-sm text-slate-600">
         <span>{t("rec_currentBalance")}</span>
         <span className="num font-semibold text-slate-900">{formatAccountMoney(balance, currencyCode, lang)}</span>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { quietWrite, isWriteCancelled } from "../writeCancellation";
+import { useEffect, useState } from "react";
 import { ChevronRight, Plus } from "lucide-react";
 import { useApp } from "../store";
 import { formatAccountMoney, groupAccountsByCurrency, todayIso } from "../format";
@@ -7,6 +8,8 @@ import { api } from "../api";
 import { Btn, Field, Modal, inputCls } from "../components/ui";
 import { accountIcon } from "../components/Sidebar";
 import type { Account, Bootstrap } from "../types";
+import { parseHash } from "../hashRoute";
+import { useWriteClient } from "../useWriteClient";
 
 export const ACCOUNT_TYPE_LABELS: Record<string, { zh: string; en: string; onBudget: number }> = {
   checking: { zh: "支票账户", en: "Checking", onBudget: 1 },
@@ -92,9 +95,18 @@ export function AccountsPage() {
   const [balance, setBalance] = useState("");
   const [currencyCode, setCurrencyCode] = useState("");
   const [date, setDate] = useState(() => todayIso(boot?.settings.timezone));
+  const [currencyFilter, setCurrencyFilter] = useState("");
+  const { client: api, conflictDialog } = useWriteClient(boot, lang);
+  useEffect(() => {
+    const requested = parseHash().query.createCurrency;
+    if (boot && requested && boot.enabledCurrencies.includes(requested)) {
+      setCurrencyCode(requested);
+      setOpen(true);
+    }
+  }, [boot?.enabledCurrencies.join(",")]);
 
   if (!boot) return null;
-  const accs = boot.accounts;
+  const accs = boot.accounts.filter(a => !currencyFilter || a.currencyCode === currencyFilter);
   const onBudget = accs.filter((a) => !a.closed && a.on_budget);
   const tracking = accs.filter((a) => !a.closed && !a.on_budget);
   const closed = accs.filter((a) => a.closed);
@@ -106,7 +118,7 @@ export function AccountsPage() {
     setOpen(true);
   };
 
-  const create = async () => {
+  const create = quietWrite(async () => {
     if (!name.trim() || !currencyCode) return;
     try {
       const startingBalanceMinor = balance.trim() === "" ? 0 : parseAmountToMinor(balance, currencyCode);
@@ -123,12 +135,14 @@ export function AccountsPage() {
       await refreshBoot();
       toast(lang === "zh" ? "账户已创建" : "Account created");
     } catch (e) {
+      if (isWriteCancelled(e)) return;
       toast(e instanceof Error ? e.message : t("common_error"), "err");
     }
-  };
+  });
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 md:py-8">
+      {conflictDialog}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 md:mb-7">
         <div>
           <h1 className="text-xl font-bold text-slate-900">{t("nav_accounts")}</h1>
@@ -138,6 +152,7 @@ export function AccountsPage() {
           <Plus size={15} /> {t("account_add")}
         </Btn>
       </div>
+      <label className="mb-4 block text-sm">{lang === "zh" ? "账户币种筛选" : "Filter by account currency"} <select aria-label={lang === "zh" ? "账户币种筛选" : "Filter by account currency"} className={inputCls} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{lang === "zh" ? "全部币种" : "All currencies"}</option>{enabled.map(code => <option key={code}>{code}</option>)}</select></label>
 
       {accs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-400">

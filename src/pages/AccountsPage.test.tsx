@@ -70,6 +70,7 @@ vi.mock("../store", () => ({
 import { AccountsPage } from "./AccountsPage";
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "#/accounts");
   for (const fn of [h.createAccount, h.refreshBoot, h.toast]) fn.mockReset();
   h.refreshBoot.mockResolvedValue({});
   h.createAccount.mockResolvedValue({ id: "a1" });
@@ -80,6 +81,21 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it("opens the creation form with the currency promised by the empty-ledger link", async () => {
+  window.history.replaceState({}, "", "#/accounts?createCurrency=EUR");
+  render(<AccountsPage />);
+  expect((await screen.findByLabelText("account_currency") as HTMLSelectElement).value).toBe("EUR");
+});
+
+it("filters only the account list by its own currency", async () => {
+  h.boot.accounts = [account({ id: "c", name: "CNY Cash", type: "cash", currencyCode: "CNY", balance: 100 }), account({ id: "s", name: "SGD Cash", type: "cash", currencyCode: "SGD", balance: 200 })];
+  render(<AccountsPage />);
+  fireEvent.change(screen.getByLabelText("账户币种筛选"), { target: { value: "SGD" } });
+  expect(screen.queryByText("CNY Cash")).toBeNull();
+  expect(screen.getByText("SGD Cash")).toBeTruthy();
+  expect(window.location.hash).toBe("#/accounts");
+});
 
 describe("AccountsPage 新建账户弹窗", () => {
   it("类型下拉的每个选项都标注预算内/预算外", async () => {

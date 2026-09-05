@@ -71,6 +71,8 @@ export interface CategoryGroup {
 }
 
 export interface Bootstrap {
+  ledgerRevisions?: Record<string, number>;
+  categoryRevision?: number;
   settings: Settings;
   accounts: Account[];
   payees: string[];

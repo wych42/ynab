@@ -22,6 +22,7 @@ import type {
   FxStatus,
 } from "./types";
 import { getToken } from "./auth";
+import type { WriteSnapshot } from "./writeContext";
 
 export class ApiError extends Error {
   status?: number;
@@ -29,6 +30,10 @@ export class ApiError extends Error {
   anomalies?: CurrencyMigrationAnomaly[];
   backup?: CurrencyMigrationBackup;
   budget?: BudgetData;
+  ledgerRevisions?: Record<string, number>;
+  categoryRevision?: number;
+  groups?: Bootstrap["groups"];
+  accounts?: Account[];
 }
 
 function readBackup(value: unknown): CurrencyMigrationBackup | undefined {
@@ -48,7 +53,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     let msg = `${res.status}`;
-    let body: { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown; budget?: unknown } | null = null;
+    let body: { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown; budget?: unknown; ledgerRevisions?: Record<string, number>; categoryRevision?: number; groups?: Bootstrap["groups"]; accounts?: Account[] } | null = null;
     try {
       body = (await res.json()) as { error?: unknown; code?: unknown; anomalies?: unknown; backup?: unknown; budget?: unknown };
       if (typeof body?.error === "string") msg = body.error;
@@ -60,6 +65,10 @@ async function req<T>(url: string, init?: RequestInit): Promise<T> {
     const backup = readBackup(body?.backup);
     if (backup) err.backup = backup;
     if (body?.budget && typeof body.budget === "object") err.budget = body.budget as BudgetData;
+    err.ledgerRevisions = body?.ledgerRevisions;
+    err.categoryRevision = body?.categoryRevision;
+    err.groups = body?.groups;
+    err.accounts = body?.accounts;
     throw err;
   }
   return res.json() as Promise<T>;
@@ -176,12 +185,13 @@ export const api = {
     currencyCode: string;
     startingBalanceMinor: number;
     startingDate?: string;
+    expectedRevision?: Record<string, number>;
   }) => req<{ id: string }>("/api/accounts", { method: "POST", body: JSON.stringify(body) }),
-  updateAccount: (id: string, body: { name?: string; closed?: boolean; currencyCode?: string }) =>
+  updateAccount: (id: string, body: { name?: string; closed?: boolean; currencyCode?: string; expectedRevision?: Record<string, number> }) =>
     req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteAccount: (id: string) => req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "DELETE" }),
+  deleteAccount: (id: string, expectedRevision?: Record<string, number>) => req<{ accounts: Account[] }>(`/api/accounts/${id}`, { method: "DELETE", body: JSON.stringify({ expectedRevision }) }),
   accountRegister: (id: string) =>
-    req<{ account: Account & { balance: number }; transactions: Tx[] }>(`/api/accounts/${id}/transactions`),
+    req<{ account: Account & { balance: number }; transactions: Tx[] } & WriteSnapshot>(`/api/accounts/${id}/transactions`),
   investmentAccount: (id: string, params: { months: number; asOf: string }) => {
     const q = new URLSearchParams({
       months: String(params.months),
@@ -189,39 +199,40 @@ export const api = {
     });
     return req<InvestmentAccountView>(`/api/investments/${encodeURIComponent(id)}?${q.toString()}`);
   },
-  reconcile: (accountId: string, body?: { statementBalance?: number; markCleared?: boolean }) =>
+  reconcile: (accountId: string, body?: { statementBalance?: number; markCleared?: boolean; expectedRevision?: Record<string, number> }) =>
     req<{ ok: true; adjustment: number | null }>(`/api/reconcile/${accountId}`, {
       method: "POST",
       body: JSON.stringify(body ?? {}),
     }),
 
-  transactions: (params: { search?: string; uncategorized?: boolean; accountId?: string; limit?: number; offset?: number }) => {
+  transactions: (params: { search?: string; uncategorized?: boolean; accountId?: string; currency?: string; limit?: number; offset?: number }) => {
     const q = new URLSearchParams();
     if (params.search) q.set("search", params.search);
     if (params.uncategorized) q.set("uncategorized", "1");
     if (params.accountId) q.set("accountId", params.accountId);
+    if (params.currency) q.set("currency", params.currency);
     if (params.limit !== undefined) q.set("limit", String(params.limit));
     if (params.offset !== undefined) q.set("offset", String(params.offset));
     const qs = q.toString();
-    return req<{ transactions: Tx[]; total: number }>(`/api/transactions${qs ? `?${qs}` : ""}`);
+    return req<{ transactions: Tx[]; total: number } & WriteSnapshot>(`/api/transactions${qs ? `?${qs}` : ""}`);
   },
   createTx: (body: unknown) => req<{ ok: true }>("/api/transactions", { method: "POST", body: JSON.stringify(body) }),
   updateTx: (id: string, body: unknown) =>
     req<{ ok: true }>(`/api/transactions/${id}`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteTx: (id: string) => req<{ ok: true }>(`/api/transactions/${id}`, { method: "DELETE" }),
-  setTxStatus: (id: string, cleared: number) =>
-    req<{ ok: true }>(`/api/transactions/${id}/cleared`, { method: "PATCH", body: JSON.stringify({ cleared }) }),
-  setTxCategory: (id: string, categoryId: string | null) =>
-    req<{ ok: true }>(`/api/transactions/${id}/category`, { method: "PATCH", body: JSON.stringify({ categoryId }) }),
-  bulkSetCategory: (ids: string[], categoryId: string | null) =>
+  deleteTx: (id: string, expectedRevision?: Record<string, number>) => req<{ ok: true }>(`/api/transactions/${id}`, { method: "DELETE", body: JSON.stringify({ expectedRevision }) }),
+  setTxStatus: (id: string, cleared: number, expectedRevision?: Record<string, number>) =>
+    req<{ ok: true }>(`/api/transactions/${id}/cleared`, { method: "PATCH", body: JSON.stringify({ cleared, expectedRevision }) }),
+  setTxCategory: (id: string, categoryId: string | null, expectedRevision?: Record<string, number>) =>
+    req<{ ok: true }>(`/api/transactions/${id}/category`, { method: "PATCH", body: JSON.stringify({ categoryId, expectedRevision }) }),
+  bulkSetCategory: (ids: string[], categoryId: string | null, expectedRevision?: Record<string, number>) =>
     req<{ ok: true; changed: number }>("/api/transactions/bulk-category", {
       method: "POST",
-      body: JSON.stringify({ ids, categoryId }),
+      body: JSON.stringify({ ids, categoryId, expectedRevision }),
     }),
-  bulkDeleteTx: (ids: string[]) =>
+  bulkDeleteTx: (ids: string[], expectedRevision?: Record<string, number>) =>
     req<{ ok: true; changed: number }>("/api/transactions/bulk-delete", {
       method: "POST",
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ ids, expectedRevision }),
     }),
 
   addGroup: (name: string, expectedCategoryRevision?: number) =>
@@ -234,7 +245,7 @@ export const api = {
     req<{ id: string }>("/api/categories", { method: "POST", body: JSON.stringify({ groupId, name, expectedCategoryRevision }) }),
   renameCategory: (id: string, name: string, expectedCategoryRevision?: number) =>
     req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify({ name, expectedCategoryRevision }) }),
-  updateCategory: (id: string, patch: { name?: string; note?: string }, expectedCategoryRevision?: number) =>
+  updateCategory: (id: string, patch: { name?: string; note?: string; hidden?: boolean }, expectedCategoryRevision?: number) =>
     req<{ ok: true }>(`/api/categories/${id}`, { method: "PUT", body: JSON.stringify({ ...patch, expectedCategoryRevision }) }),
   deleteCategory: (id: string, expectedCategoryRevision?: number) =>
     req<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE", body: JSON.stringify({ expectedCategoryRevision }) }),

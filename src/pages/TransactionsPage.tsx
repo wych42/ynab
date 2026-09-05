@@ -1,3 +1,4 @@
+import { quietWrite, isWriteCancelled } from "../writeCancellation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -18,6 +19,8 @@ import { Btn, Spinner } from "../components/ui";
 import { AmountInput, CategorySelect, PayeeSelect, TxAmountCaption, emptyForm, formAmount, parseOptionalMinor, type FormState } from "../components/txEdit";
 import { parseHash } from "../hashRoute";
 import type { Tx } from "../types";
+import { useWriteClient } from "../useWriteClient";
+import type { WriteSnapshot } from "../writeContext";
 
 const PAGE_SIZE = 200;
 
@@ -26,6 +29,9 @@ export function TransactionsPage() {
 
   const [onlyUncat, setOnlyUncat] = useState(() => parseHash().query.filter === "uncategorized");
   const [accFilter, setAccFilter] = useState("");
+  const [currencyFilter, setCurrencyFilter] = useState("");
+  const [snapshot, setSnapshot] = useState<WriteSnapshot>({});
+  const { client: api, conflictDialog } = useWriteClient(snapshot, lang);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [data, setData] = useState<{ txs: Tx[]; total: number } | null>(null);
@@ -43,8 +49,8 @@ export function TransactionsPage() {
   }, [searchInput]);
 
   const filters = useMemo(
-    () => ({ search: search || undefined, uncategorized: onlyUncat || undefined, accountId: accFilter || undefined }),
-    [search, onlyUncat, accFilter]
+    () => ({ search: search || undefined, uncategorized: onlyUncat || undefined, accountId: accFilter || undefined, currency: currencyFilter || undefined }),
+    [search, onlyUncat, accFilter, currencyFilter]
   );
 
   const mergeLoaded = useCallback((next: Tx[], total: number) => {
@@ -59,11 +65,11 @@ export function TransactionsPage() {
   useEffect(() => {
     const seq = ++reqSeq.current;
     api.transactions({ ...filters, limit: PAGE_SIZE }).then((r) => {
-      if (seq === reqSeq.current) mergeLoaded(r.transactions, r.total);
+      if (seq === reqSeq.current) { mergeLoaded(r.transactions, r.total); setSnapshot(r); }
     }).catch(() => {});
   }, [filters, mergeLoaded]);
 
-  const loadMore = async () => {
+  const loadMore = quietWrite(async () => {
     if (!data || loadingMore) return;
     setLoadingMore(true);
     try {
@@ -72,13 +78,14 @@ export function TransactionsPage() {
     } finally {
       setLoadingMore(false);
     }
-  };
+  });
 
-  const reload = async () => {
+  const reload = quietWrite(async () => {
     const r = await api.transactions({ ...filters, limit: PAGE_SIZE });
+    setSnapshot(r);
     mergeLoaded(r.transactions, r.total);
     await refreshBoot();
-  };
+  });
 
   function accountName(tx: Tx): string {
     return tx.account_name ?? boot?.accounts.find((a) => a.id === tx.accountId)?.name ?? "";
@@ -94,7 +101,8 @@ export function TransactionsPage() {
       await api.deleteTx(id);
       setEditingId(null);
       await reload();
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
   }
@@ -121,16 +129,17 @@ export function TransactionsPage() {
       return n;
     });
 
-  const changeCategory = async (tx: Tx, categoryId: string) => {
+  const changeCategory = quietWrite(async (tx: Tx, categoryId: string) => {
     try {
       await api.setTxCategory(tx.id, categoryId || null);
       await reload();
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
-  };
+  });
 
-  const applyBulk = async (categoryId: string | null) => {
+  const applyBulk = quietWrite(async (categoryId: string | null) => {
     if (selected.size === 0) return;
     try {
       const r = await api.bulkSetCategory([...selected], categoryId);
@@ -138,12 +147,13 @@ export function TransactionsPage() {
       setBulkCat("");
       await reload();
       toast(t("txp_bulkDone", { n: r.changed }));
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
-  };
+  });
 
-  const bulkDelete = async () => {
+  const bulkDelete = quietWrite(async () => {
     if (selected.size === 0) return;
     if (!confirm(t("txp_bulkDeleteConfirm", { n: selected.size }))) return;
     try {
@@ -152,10 +162,11 @@ export function TransactionsPage() {
       setEditingId(null);
       await reload();
       toast(t("txp_bulkDone", { n: r.changed }));
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
-  };
+  });
 
   const startEdit = (tx: Tx) => {
     setEditingId(tx.id);
@@ -180,7 +191,7 @@ export function TransactionsPage() {
     });
   };
 
-  const saveEdit = async () => {
+  const saveEdit = quietWrite(async () => {
     if (!editingId) return;
     const tx = data?.txs.find((x) => x.id === editingId);
     if (!tx) return;
@@ -214,10 +225,11 @@ export function TransactionsPage() {
       await api.updateTx(editingId, payload);
       setEditingId(null);
       await reload();
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     }
-  };
+  });
 
   if (!boot || !data) return <Spinner />;
 
@@ -226,6 +238,7 @@ export function TransactionsPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {conflictDialog}
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-4 pb-4 pt-5 shadow-card md:px-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -252,6 +265,7 @@ export function TransactionsPage() {
 
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 px-4 pt-4 md:px-6">
+        <label className="text-sm">{lang === "zh" ? "账户入账币种" : "Account booking currency"} <select aria-label={lang === "zh" ? "账户入账币种" : "Account booking currency"} className={searchCls + " w-auto"} value={currencyFilter} onChange={e => setCurrencyFilter(e.target.value)}><option value="">{lang === "zh" ? "全部币种" : "All currencies"}</option>{boot.enabledCurrencies.map(code => <option key={code}>{code}</option>)}</select></label>
         <div className="relative w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input className={"pl-8 " + searchCls} placeholder={t("txp_search")} value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
@@ -366,11 +380,11 @@ export function TransactionsPage() {
                   <input type="checkbox" checked={selected.has(tx.id)} onChange={() => toggleSel(tx.id)} className="accent-brand-600" />
                 </div>
                 <button
-                  onClick={async () => {
+                  onClick={quietWrite(async () => {
                     if (tx.reconciled) return;
                     await api.setTxStatus(tx.id, tx.cleared === 1 ? 0 : 1);
                     await reload();
-                  }}
+                  })}
                   title={tx.reconciled ? "reconciled" : tx.cleared ? "cleared" : "uncleared"}
                   className={`mx-auto flex h-5 w-5 items-center justify-center rounded-full transition-colors ${
                     tx.reconciled

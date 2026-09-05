@@ -1,3 +1,4 @@
+import { quietWrite, isWriteCancelled } from "../writeCancellation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -23,8 +24,11 @@ import type { BudCategory, BudGroup, BudgetData } from "../types";
 import { Btn, Field, Modal, Spinner, inputCls } from "../components/ui";
 import { completeBudgetHash, formatHash, parseHash, pushHash, useHashRoute, type CurrencyNotice } from "../hashRoute";
 import { persistBudgetCurrency, readStoredBudgetCurrency } from "../activeCurrency";
+import { useWriteClient } from "../useWriteClient";
+import { budgetNeedsFunding } from "../budgetEmptyState";
 
 const BudgetCurrencyContext = createContext("");
+const BudgetWriteContext = createContext(api);
 
 function useCollapsedGroups() {
   const [collapsed, setCollapsed] = useState<string[]>(() => {
@@ -74,12 +78,13 @@ export function BudgetPage() {
   const { collapsed, toggle } = useCollapsedGroups();
   const rtaMenuRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  const { client: writeApi, conflictDialog } = useWriteClient({ ...boot, categoryRevision: win?.data[base]?.categoryRevision ?? boot?.categoryRevision }, lang, () => setCopying(false));
 
   useEffect(() => {
     if (!base && boot) setBase(boot.currentMonth);
   }, [boot, base]);
 
-  const load = useCallback(async (m: string, currency: string) => {
+  const load = useCallback(quietWrite(async (m: string, currency: string) => {
     const months = [shiftMonth(m, -1), m, shiftMonth(m, 1)];
     const list = await Promise.all(months.map((mm) => api.budget(mm, currency).catch(() => null)));
     if (currencyRef.current !== currency) return;
@@ -89,7 +94,7 @@ export function BudgetPage() {
     });
     if (!data[m]) throw new Error("bad month");
     setWin({ months, data });
-  }, []);
+  }), []);
 
   useEffect(() => {
     if (!boot) return;
@@ -186,10 +191,14 @@ export function BudgetPage() {
   const apply = (d: BudgetData) => {
     if (d.currencyCode !== currencyRef.current) return;
     setWin((w) => (w && w.data[d.month] ? { ...w, data: { ...w.data, [d.month]: d } } : w));
+    setSel(current => {
+      if (current?.kind !== "cat" || current.month !== d.month) return current;
+      const cat = d.groups.flatMap(g => g.categories).find(c => c.id === current.cat.id);
+      return cat ? { ...current, cat } : null;
+    });
   };
 
-  const commitAssign = async (month: string, catId: string, value: string) => {
-    setEditing(null);
+  const commitAssign = quietWrite(async (month: string, catId: string, value: string) => {
     if (!currencyRef.current) return;
     let cents: number;
     try {
@@ -199,9 +208,11 @@ export function BudgetPage() {
     }
     if (cents < 0) return;
     try {
-      apply(await api.assign(month, catId, cents, currencyRef.current, win?.data[month]?.revision));
+      apply(await writeApi.assign(month, catId, cents, currencyRef.current, win?.data[month]?.revision));
+      setEditing(null);
       setConflict(null);
     } catch (err) {
+      if (isWriteCancelled(err)) return;
       const conflictErr = err as ApiError;
       if (conflictErr?.code === "budget_revision_conflict" && conflictErr.budget) {
         apply(conflictErr.budget);
@@ -217,20 +228,21 @@ export function BudgetPage() {
       }
       toast(t("common_error"), "err");
     }
-  };
+  });
 
-  const copyPrev = async (m: string) => {
+  const copyPrev = quietWrite(async (m: string) => {
     if (!confirm(t("budget_copyLastConfirm")) || !currencyRef.current) return;
     setCopying(true);
     try {
-      apply(await api.copyLastMonth(m, currencyRef.current, win?.data[m]?.revision));
+      apply(await writeApi.copyLastMonth(m, currencyRef.current, win?.data[m]?.revision));
       toast(t("budget_copyLastOk"));
-    } catch {
+    } catch (error) {
+      if (isWriteCancelled(error)) return;
       toast(t("common_error"), "err");
     } finally {
       setCopying(false);
     }
-  };
+  });
 
   const catIndex: Record<string, Map<string, BudCategory>> = {};
   for (const m of monthsWin) {
@@ -246,9 +258,11 @@ export function BudgetPage() {
 
   const emptyStart = boot.accounts.length === 0 && cur.months.length === 1 && cur.incomeThisMonth === 0;
   if (emptyStart) return <EmptyStart />;
+  const needsFunding = budgetNeedsFunding(cur, boot.accounts.filter(a => !a.closed && a.on_budget && a.currencyCode === currency));
 
   return (
-    <BudgetCurrencyContext.Provider value={currency}>
+    <BudgetCurrencyContext.Provider value={currency}><BudgetWriteContext.Provider value={writeApi}>
+    {conflictDialog}
     <div className="flex h-full">
       <div className="flex h-full min-w-[1060px] flex-1 flex-col">
         {/* Header */}
@@ -328,7 +342,7 @@ export function BudgetPage() {
                   <Btn
                     variant="primary"
                     className="mt-3 w-full"
-                    onClick={() => api.autoAssign(cur.month, currency, cur.revision).then(apply).then(() => toast(t("budget_autoAssign") + " ✓"))}
+                    onClick={quietWrite(() => writeApi.autoAssign(cur.month, currency, cur.revision).then(apply).then(() => toast(t("budget_autoAssign") + " ✓")))}
                   >
                     <Sparkles size={14} /> {t("budget_autoAssign")}
                   </Btn>
@@ -428,7 +442,7 @@ export function BudgetPage() {
 
         {/* Table body */}
         <div className="flex-1 space-y-4 px-3 py-4">
-          {cur.groups.map((g) => (
+          {needsFunding ? <div role="status" className="max-w-xl rounded-xl border bg-white p-6"><h2 className="font-semibold">{lang === "zh" ? `${currency} 账户尚无可分配资金` : `${currency} accounts have no funds to assign yet`}</h2><p className="my-3 text-sm text-slate-600">{lang === "zh" ? "账户余额和预算金额均为零。请在账户中录入银行期初余额或实际收入，再分配预算。" : "Account balances and budget amounts are zero. Record an opening balance or actual income in an account before assigning funds."}</p><a className="text-brand-600 underline" href={`#/accounts/${boot.accounts.find(a => !a.closed && a.on_budget && a.currencyCode === currency)?.id}`}>{lang === "zh" ? "打开账户录入资金" : "Open account to record funds"}</a></div> : cur.groups.map((g) => (
             <GroupBlock
               key={g.id}
               group={g}
@@ -453,6 +467,7 @@ export function BudgetPage() {
               }}
             />
           ))}
+          {boot.groups.some(g => g.categories.some(c => c.hidden)) && <details className="rounded border bg-white p-3 text-sm"><summary>{lang === "zh" ? "已隐藏分类" : "Hidden categories"}</summary>{boot.groups.flatMap(g => g.categories).filter(c => c.hidden).map(c => <div key={c.id} className="mt-2 flex items-center justify-between"><span>{c.name}</span><button className="text-brand-600" onClick={quietWrite(async () => { if (!confirm(t("budget_categoryShare"))) return; await writeApi.updateCategory(c.id, { hidden: false }); await Promise.all([load(base, currency), refreshBoot()]); })}>{lang === "zh" ? "恢复分类" : "Restore category"}</button></div>)}</details>}
         </div>
       </div>
 
@@ -466,17 +481,18 @@ export function BudgetPage() {
           onCover={() => setCoverOpen(true)}
           onMove={() => setMoveOpen(true)}
           onRename={(id, name) => setRenameOpen({ kind: "category", id, name })}
-          onDeleteCat={async (id) => {
-            if (!confirm(t("confirm_deleteCat"))) return;
+          onDeleteCat={quietWrite(async (id) => {
+            if (!confirm(t("budget_categoryShare") + "\n" + t("confirm_deleteCat"))) return;
             try {
-              await api.deleteCategory(id);
+              await writeApi.deleteCategory(id);
               setSel(null);
               if (currency) await Promise.all([load(base, currency), refreshBoot()]);
               toast("OK");
-            } catch {
+            } catch (error) {
+      if (isWriteCancelled(error)) return;
               toast(t("account_deleteWarn"), "err");
             }
-          }}
+          })}
         />
       )}
 
@@ -507,10 +523,10 @@ export function BudgetPage() {
           groups={boot.groups}
           initialGroupId={addGroupId}
           onClose={() => setAddOpen(null)}
-          onDone={async () => {
+          onDone={quietWrite(async () => {
             setAddOpen(null);
             if (currency) await Promise.all([load(base, currency), refreshBoot()]);
-          }}
+          })}
         />
       )}
       {groupMenu?.id !== undefined && groupMenu.id !== "__root__" && (
@@ -544,15 +560,17 @@ export function BudgetPage() {
                 </button>
                 <button
                   className="flex w-full items-center gap-2 px-3 py-2 text-[13px] text-rose-600 hover:bg-rose-50"
-                  onClick={async () => {
+                  onClick={quietWrite(async () => {
                     setGroupMenu(null);
                     try {
-                      await api.deleteGroup(grp.id);
+                      if (!confirm(t("budget_categoryShare"))) return;
+                      await writeApi.deleteGroup(grp.id);
                       if (currency) await Promise.all([load(base, currency), refreshBoot()]);
-                    } catch {
+                    } catch (error) {
+      if (isWriteCancelled(error)) return;
                       toast(lang === "zh" ? "分组不为空" : "Group is not empty", "err");
                     }
-                  }}
+                  })}
                 >
                   <Trash2 size={13} /> {t("budget_delete")}
                 </button>
@@ -566,17 +584,17 @@ export function BudgetPage() {
           kind={renameOpen.kind}
           name={renameOpen.name}
           onClose={() => setRenameOpen(null)}
-          onSave={async (name) => {
+          onSave={quietWrite(async (name) => {
             if (!confirm(t("budget_categoryShare"))) return;
-            if (renameOpen.kind === "group") await api.renameGroup(renameOpen.id, name);
-            else await api.renameCategory(renameOpen.id, name);
+            if (renameOpen.kind === "group") await writeApi.renameGroup(renameOpen.id, name);
+            else await writeApi.renameCategory(renameOpen.id, name);
             setRenameOpen(null);
             if (currency) await Promise.all([load(base, currency), refreshBoot()]);
-          }}
+          })}
         />
       )}
     </div>
-    </BudgetCurrencyContext.Provider>
+    </BudgetWriteContext.Provider></BudgetCurrencyContext.Provider>
   );
 }
 
@@ -935,7 +953,8 @@ function Inspector({
   onRename: (id: string, name: string) => void;
   onDeleteCat: (id: string) => void;
 }) {
-  const { t, lang, toast } = useApp();
+  const { t, lang, toast, refreshBoot } = useApp();
+  const api = useContext(BudgetWriteContext);
   const { currency, money } = useBudgetMoney();
   const [custom, setCustom] = useState("");
 
@@ -947,11 +966,11 @@ function Inspector({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const assign = async (cents: number) => {
+  const assign = quietWrite(async (cents: number) => {
     if (!cat || !currency) return;
     onApply(await api.assign(data.month, cat.id, cents, currency, data.revision));
     toast(money(cents) + " ✓");
-  };
+  });
 
   const goalForm = useMemo(() => {
     if (!cat?.goal) return { type: "", target: "", date: "" };
@@ -1090,12 +1109,20 @@ function Inspector({
               <div className="mt-5 border-t border-slate-100 pt-4">
                 <NoteEditor
                   note={cat.note ?? ""}
-                  onSave={async (note) => {
+                  onSave={quietWrite(async (note) => {
+                    if (!confirm(t("budget_categoryShare"))) return;
                     await api.updateCategory(cat.id, { note });
                     if (currency) onApply(await api.budget(data.month, currency));
                     toast("✓");
-                  }}
+                  })}
                 />
+                <button className="mt-3 text-sm text-slate-600" onClick={quietWrite(async () => {
+                  if (!confirm(t("budget_categoryShare"))) return;
+                  await api.updateCategory(cat.id, { hidden: true });
+                  if (currency) onApply(await api.budget(data.month, currency));
+                  await refreshBoot();
+                  onClose();
+                })}>{lang === "zh" ? "隐藏分类" : "Hide category"}</button>
               </div>
             )}
 
@@ -1107,7 +1134,7 @@ function Inspector({
                   setGf={setGf}
                   lang={lang}
                   t={t}
-                  onSave={async () => {
+                  onSave={quietWrite(async () => {
                     if (!gf.type || !currency) return;
                     let cents: number;
                     try {
@@ -1122,12 +1149,12 @@ function Inspector({
                     }, currency, data.revision);
                     onApply(await api.budget(data.month, currency));
                     toast("✓");
-                  }}
-                  onClear={async () => {
+                  })}
+                  onClear={quietWrite(async () => {
                     if (!currency) return;
                     await api.clearGoal(cat.id, currency, data.revision);
                     onApply(await api.budget(data.month, currency));
-                  }}
+                  })}
                 />
               </div>
             )}
@@ -1179,10 +1206,10 @@ function NoteEditor({ note, onSave }: { note: string; onSave: (note: string) => 
         <Btn
           variant="primary"
           className="w-full"
-          onClick={async () => {
+          onClick={quietWrite(async () => {
             await onSave(value);
             setSaved(value);
-          }}
+          })}
         >
           {t("common_save")}
         </Btn>
@@ -1277,6 +1304,7 @@ function GoalEditor({
 /* ------------------------------ Modals ------------------------------ */
 
 function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: () => void; onDone: (d: BudgetData) => void }) {
+  const api = useContext(BudgetWriteContext);
   const { t, lang, toast } = useApp();
   const { currency, money } = useBudgetMoney();
   const [from, setFrom] = useState("");
@@ -1312,7 +1340,7 @@ function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: 
       <Btn
         variant="primary"
         className="w-full"
-        onClick={async () => {
+        onClick={quietWrite(async () => {
           if (!from || !to || from === to || !currency) return;
           let cents: number;
           try {
@@ -1323,7 +1351,7 @@ function MoveMoneyModal({ data, onClose, onDone }: { data: BudgetData; onClose: 
           if (cents <= 0) return;
           onDone(await api.moveMoney(data.month, from, to, cents, currency, data.revision));
           toast("✓");
-        }}
+        })}
       >
         <ArrowRightLeft size={14} /> {t("move_confirm")}
       </Btn>
@@ -1343,6 +1371,7 @@ function CoverModal({
   onDone: (d: BudgetData) => void;
 }) {
   const { t, lang } = useApp();
+  const api = useContext(BudgetWriteContext);
   const { currency, money } = useBudgetMoney();
   const overspent = data.groups.flatMap((g) => g.categories).filter((c) => c.available < 0);
   const [catId, setCatId] = useState(initialCatId ?? overspent[0]?.id ?? "");
@@ -1386,10 +1415,10 @@ function CoverModal({
           <Btn
             variant="primary"
             className="mt-4 w-full"
-            onClick={async () => {
+            onClick={quietWrite(async () => {
               if (!catId || !fromId) return;
               if (currency) onDone(await api.coverOverspending(data.month, catId, fromId, currency, data.revision));
-            }}
+            })}
           >
             {t("inspector_coverBtn")}
           </Btn>
@@ -1430,6 +1459,7 @@ function AddModal({
   onDone: () => void;
 }) {
   const { t, lang } = useApp();
+  const api = useContext(BudgetWriteContext);
   const [name, setName] = useState("");
   const [groupId, setGroupId] = useState(initialGroupId || groups[0]?.id || "");
 
@@ -1452,13 +1482,13 @@ function AddModal({
       <Btn
         variant="primary"
         className="w-full"
-        onClick={async () => {
+        onClick={quietWrite(async () => {
           if (!name.trim()) return;
           if (!confirm(t("budget_categoryShare"))) return;
           if (kind === "group") await api.addGroup(name.trim());
           else await api.addCategory(groupId, name.trim());
           await onDone();
-        }}
+        })}
       >
         <Plus size={14} /> {t("common_add")}
       </Btn>
@@ -1533,7 +1563,7 @@ function EmptyCurrencyLedger({
         <h1 className="text-2xl font-bold text-slate-900">{t("budget_emptyLedger", { code: currency })}</h1>
         <div className="mt-8 flex flex-col items-center gap-4">
           <a
-            href="#/accounts"
+            href={`#/accounts?createCurrency=${encodeURIComponent(currency)}`}
             className="inline-flex items-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-500"
           >
             {t("budget_createCurrencyAccount", { code: currency })}
@@ -1569,15 +1599,16 @@ function EmptyStart() {
         <div className="mt-8 flex items-center justify-center gap-3">
           <Btn
             variant="primary"
-            onClick={async () => {
+            onClick={quietWrite(async () => {
               try {
                 await api.loadDemo();
                 await refreshBoot();
                 location.reload();
-              } catch {
+              } catch (error) {
+      if (isWriteCancelled(error)) return;
                 toast(t("common_error"), "err");
               }
-            }}
+            })}
           >
             <Sparkles size={14} /> {t("empty_loadDemo")}
           </Btn>

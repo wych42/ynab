@@ -123,6 +123,9 @@ function sendRevisionError(res, error, { month, currencyCode } = {}) {
     message: error.message,
     revision: error.extra.revision,
     categoryRevision: error.extra.categoryRevision ?? readCategoryRevision(db),
+    ...writeSnapshot(),
+    accounts: accountsWithBalances(),
+    groups: groupsWithCategories(),
   };
   if (error.code === "budget_revision_conflict" && month && currencyCode) {
     body.budget = budgetPayload(month, currencyCode);
@@ -280,6 +283,70 @@ api.use((req, res, next) => {
   return res.status(409).json(currencyMigrationLockPayload());
 });
 
+function writeSnapshot() {
+  return {
+    ledgerRevisions: Object.fromEntries(db.prepare("SELECT currency_code, revision FROM currency_ledgers").all().map(r => [r.currency_code, r.revision])),
+    categoryRevision: readCategoryRevision(db),
+  };
+}
+
+// These synchronous routes check the version and write within one SQLite transaction.
+api.use((req, res, next) => {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
+  const categoryWrite = /^\/(categories|category-groups)(\/|$)/.test(req.path);
+  const ledgerWrite = /^\/(accounts|transactions|transfers|reconcile)(\/|$)/.test(req.path);
+  if (!categoryWrite && !ledgerWrite) return next();
+  try {
+    db.transaction(() => {
+      const body = req.body || {};
+      const categoryBefore = categoryWrite ? JSON.stringify(groupsWithCategories()) : null;
+      if (categoryWrite) {
+        if (!Number.isInteger(body.expectedCategoryRevision) || body.expectedCategoryRevision < 0) {
+          res.status(400).json({ error: "expected_category_revision_required", code: "expected_category_revision_required" });
+          return;
+        }
+        if (body.expectedCategoryRevision !== readCategoryRevision(db)) {
+          res.status(409).json({ error: "category_revision_conflict", code: "category_revision_conflict", ...writeSnapshot(), groups: groupsWithCategories() });
+          return;
+        }
+      } else {
+        const accounts = new Set([body.accountId, body.transferAccountId, body.fromId, body.toId].filter(Boolean));
+        const accountMatch = req.path.match(/^\/(?:accounts|reconcile)\/([^/]+)/);
+        if (accountMatch) accounts.add(accountMatch[1]);
+        const transactionMatch = req.path.match(/^\/transactions\/([^/]+)/);
+        const ids = [...(Array.isArray(body.ids) ? body.ids : []), ...(transactionMatch ? [transactionMatch[1]] : [])];
+        for (const id of ids) {
+          const tx = db.prepare("SELECT account_id, transfer_account_id FROM transactions WHERE id=?").get(id);
+          if (tx) { accounts.add(tx.account_id); if (tx.transfer_account_id) accounts.add(tx.transfer_account_id); }
+        }
+        const codes = new Set();
+        for (const id of accounts) {
+          const account = db.prepare("SELECT currency_code, on_budget FROM accounts WHERE id=?").get(id);
+          if (account?.on_budget) codes.add(account.currency_code);
+        }
+        if ((req.path === "/accounts" && ["checking", "savings", "cash", "creditCard"].includes(body.type)) || (accountMatch && codes.size && body.currencyCode)) {
+          requireEnabledCurrency(db, body.currencyCode);
+          codes.add(body.currencyCode);
+        }
+        for (const code of codes) {
+          const expected = typeof body.expectedRevision === "object" && body.expectedRevision ? body.expectedRevision[code] : codes.size === 1 ? body.expectedRevision : undefined;
+          parsePageExpectedRevision(expected);
+          if (expected !== readLedgerRevision(db, code)) {
+            res.status(409).json({ error: "budget_revision_conflict", code: "budget_revision_conflict", ...writeSnapshot(), accounts: accountsWithBalances(), groups: groupsWithCategories() });
+            return;
+          }
+        }
+      }
+      next();
+      if (categoryWrite && res.statusCode < 400 && JSON.stringify(groupsWithCategories()) !== categoryBefore) {
+        for (const row of db.prepare("SELECT currency_code FROM currency_ledgers").all()) bumpLedgerRevision(db, row.currency_code);
+      }
+    })();
+  } catch (error) {
+    return sendAccountCurrencyError(res, error);
+  }
+});
+
 api.post("/demo", (req, res) => {
   const n = db.prepare("SELECT COUNT(*) c FROM transactions").get().c;
   if (n > 0) return bad(res, "data exists");
@@ -314,6 +381,7 @@ api.get("/bootstrap", (req, res) => {
     currencyMigrationRequired: currency.currencyMigrationRequired,
     supportedCurrencies: currency.supportedCurrencies,
     enabledCurrencies: currency.enabledCurrencies,
+    ...writeSnapshot(),
   });
 });
 
@@ -893,7 +961,7 @@ api.post("/budget/:month/auto-assign", (req, res) => {
 });
 
 api.get("/accounts", (req, res) => {
-  res.json({ accounts: accountsWithBalances() });
+  res.json({ accounts: accountsWithBalances(), ...writeSnapshot() });
 });
 
 api.post("/accounts", (req, res) => {
@@ -924,14 +992,22 @@ api.put("/accounts/:id", (req, res) => {
   const { name, closed, currencyCode } = req.body || {};
   try {
     const apply = db.transaction(() => {
-      if (typeof currencyCode === "string") changeAccountCurrency(db, acc.id, currencyCode);
-      if (typeof name === "string" && name.trim()) db.prepare("UPDATE accounts SET name=? WHERE id=?").run(name.trim(), acc.id);
+      const changedCurrencies = new Set();
+      if (typeof currencyCode === "string") {
+        changeAccountCurrency(db, acc.id, currencyCode);
+        if (acc.on_budget && currencyCode !== acc.currency_code) { changedCurrencies.add(acc.currency_code); changedCurrencies.add(currencyCode); }
+      }
+      if (typeof name === "string" && name.trim()) {
+        db.prepare("UPDATE accounts SET name=? WHERE id=?").run(name.trim(), acc.id);
+        if (acc.on_budget && name.trim() !== acc.name) changedCurrencies.add(currencyCode || acc.currency_code);
+      }
       if (typeof closed === "boolean") {
         const bal = accountsWithBalances().find((a) => a.id === acc.id)?.balance || 0;
         if (closed && bal !== 0 && isCreditType(acc.type)) throw new Error("balance must be zero");
         db.prepare("UPDATE accounts SET closed=? WHERE id=?").run(closed ? 1 : 0, acc.id);
-        if (acc.on_budget && closed !== !!acc.closed) bumpLedgerRevision(db, acc.currency_code);
+        if (acc.on_budget && closed !== !!acc.closed) changedCurrencies.add(currencyCode || acc.currency_code);
       }
+      for (const code of changedCurrencies) bumpLedgerRevision(db, code);
     });
     apply();
   } catch (e) {
@@ -946,7 +1022,9 @@ api.delete("/accounts/:id", (req, res) => {
     .prepare("SELECT COUNT(*) c FROM transactions WHERE (account_id=? OR transfer_account_id=?) AND is_start=0")
     .get(req.params.id, req.params.id).c;
   if (n > 0) return bad(res, "has transactions");
+  const account = db.prepare("SELECT * FROM accounts WHERE id=?").get(req.params.id);
   db.prepare("DELETE FROM accounts WHERE id=?").run(req.params.id);
+  if (account?.on_budget) bumpLedgerRevision(db, account.currency_code);
   res.json({ accounts: accountsWithBalances() });
 });
 
@@ -971,7 +1049,7 @@ api.get("/accounts/:id/transactions", (req, res) => {
     if (!r.is_start) running += r.amount;
     out.push({ ...transformTx(r, acc.currency_code), balance: running });
   }
-  res.json({ account: presentAccount(acc, { balance: running }), transactions: out.reverse() });
+  res.json({ account: presentAccount(acc, { balance: running }), transactions: out.reverse(), ...writeSnapshot() });
 });
 
 function transformTx(r, accountCurrencyCode) {
@@ -1000,7 +1078,7 @@ function transformTx(r, accountCurrencyCode) {
 }
 
 api.get("/transactions", (req, res) => {
-  const { search, uncategorized, accountId } = req.query;
+  const { search, uncategorized, accountId, currency } = req.query;
   let where = `
              FROM transactions t
              LEFT JOIN categories c ON c.id=t.category_id
@@ -1008,6 +1086,11 @@ api.get("/transactions", (req, res) => {
              LEFT JOIN accounts o ON o.id=t.transfer_account_id
              WHERE t.is_start=0`;
   const args = [];
+  if (currency) {
+    try { requireEnabledCurrency(db, currency); } catch (error) { return sendAccountCurrencyError(res, error); }
+    where += " AND a.currency_code=?";
+    args.push(currency);
+  }
   if (search) {
     where += " AND (t.payee_name LIKE ? OR t.memo LIKE ? OR c.name LIKE ?)";
     const like = `%${search}%`;
@@ -1019,7 +1102,8 @@ api.get("/transactions", (req, res) => {
     args.push(String(accountId));
   }
   where +=
-    " AND NOT (t.amount > 0 AND t.transfer_account_id IS NOT NULL AND EXISTS(SELECT 1 FROM accounts o2 WHERE o2.id=t.transfer_account_id AND o2.on_budget=1))";
+    " AND NOT (t.amount > 0 AND t.transfer_account_id IS NOT NULL AND EXISTS(SELECT 1 FROM accounts o2 WHERE o2.id=t.transfer_account_id AND o2.on_budget=1 AND (? IS NULL OR o2.currency_code=?)))";
+  args.push(currency || null, currency || null);
   const total = db.prepare("SELECT COUNT(*) c " + where).get(...args).c;
   const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 500, 1), 2000);
   const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
@@ -1035,12 +1119,12 @@ api.get("/transactions", (req, res) => {
        ORDER BY t.date DESC, t.rowid DESC LIMIT ? OFFSET ?`
     )
     .all(...args, limit, offset);
-  res.json({ total, transactions: rows.map((row) => transformTx(row, row.account_currency_code)) });
+  res.json({ total, transactions: rows.map((row) => transformTx(row, row.account_currency_code)), ...writeSnapshot() });
 });
 
 api.patch("/transactions/:id/category", (req, res) => {
   try {
-    setTransactionCategory(db, req.params.id, req.body?.categoryId || null);
+    setTransactionCategory(db, req.params.id, req.body?.categoryId || null, req.body?.expectedRevision);
     res.json({ ok: true });
   } catch (e) {
     return sendLedgerError(res, e);
@@ -1049,7 +1133,7 @@ api.patch("/transactions/:id/category", (req, res) => {
 
 api.post("/transactions/bulk-category", (req, res) => {
   try {
-    const result = setTransactionsCategory(db, req.body?.ids, req.body?.categoryId || null);
+    const result = setTransactionsCategory(db, req.body?.ids, req.body?.categoryId || null, req.body?.expectedRevision);
     res.json(result);
   } catch (e) {
     return sendLedgerError(res, e);
@@ -1058,7 +1142,7 @@ api.post("/transactions/bulk-category", (req, res) => {
 
 api.post("/transactions/bulk-delete", (req, res) => {
   try {
-    const result = deleteTransactions(db, req.body?.ids);
+    const result = deleteTransactions(db, req.body?.ids, req.body?.expectedRevision);
     res.json(result);
   } catch (e) {
     return sendLedgerError(res, e);
@@ -1097,7 +1181,7 @@ api.put("/transactions/:id", (req, res) => {
 
 api.delete("/transactions/:id", (req, res) => {
   try {
-    deleteTransaction(db, req.params.id);
+    deleteTransaction(db, req.params.id, req.body?.expectedRevision);
     res.json({ ok: true });
   } catch (e) {
     return sendLedgerError(res, e);
@@ -1124,6 +1208,7 @@ api.post("/reconcile/:accountId", (req, res) => {
       accountId: req.params.accountId,
       statementBalance: body.statementBalance,
       markCleared: body.markCleared,
+      expectedRevision: body.expectedRevision,
       asOfDate: todayYmd(),
     });
     res.json(result);
@@ -1133,7 +1218,7 @@ api.post("/reconcile/:accountId", (req, res) => {
 });
 
 api.get("/categories", (req, res) => {
-  res.json({ groups: groupsWithCategories() });
+  res.json({ groups: groupsWithCategories(), ...writeSnapshot() });
 });
 
 api.post("/category-groups", (req, res) => {
