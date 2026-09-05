@@ -30,6 +30,7 @@ const h = vi.hoisted(() => ({
   createAccount: vi.fn(),
   refreshBoot: vi.fn(),
   toast: vi.fn(),
+  lang: "zh" as "zh" | "en",
   boot: {
     settings: {
       currencySymbol: "¥",
@@ -56,7 +57,7 @@ vi.mock("../api", () => ({
 vi.mock("../store", () => ({
   useApp: () => ({
     boot: h.boot,
-    lang: "zh",
+    lang: h.lang,
     t: (k: string, v?: Record<string, string | number>) => {
       const mapped: Record<string, string> = { account_tagOnBudget: "预算内", account_tagOffBudget: "预算外" };
       const base = mapped[k] ?? k;
@@ -70,6 +71,7 @@ vi.mock("../store", () => ({
 import { AccountsPage } from "./AccountsPage";
 
 beforeEach(() => {
+  h.lang = "zh";
   window.history.replaceState({}, "", "#/accounts");
   for (const fn of [h.createAccount, h.refreshBoot, h.toast]) fn.mockReset();
   h.refreshBoot.mockResolvedValue({});
@@ -81,6 +83,12 @@ beforeEach(() => {
 });
 
 afterEach(cleanup);
+
+it.each([ ["zh", "查看家庭净资产"], ["en", "View household net worth"] ] as const)("provides the household net worth link in %s without a currency override", (lang, name) => {
+  h.lang = lang;
+  render(<AccountsPage />);
+  expect(screen.getByRole("link", { name }).getAttribute("href")).toBe("#/reports/net-worth");
+});
 
 it("opens the creation form with the currency promised by the empty-ledger link", async () => {
   window.history.replaceState({}, "", "#/accounts?createCurrency=EUR");
