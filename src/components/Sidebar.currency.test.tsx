@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { Account } from "../types";
 import { formatMoney } from "../money";
 
 const h = vi.hoisted(() => ({
   accounts: [] as Account[],
   setLang: vi.fn(),
+  lang: "zh" as "zh" | "en",
 }));
 
 vi.mock("../store", () => ({
@@ -17,7 +18,7 @@ vi.mock("../store", () => ({
       enabledCurrencies: ["CNY", "USD", "SGD", "EUR", "JPY"],
     },
     t: (k: string) => k,
-    lang: "zh",
+    lang: h.lang,
     setLang: h.setLang,
   }),
 }));
@@ -26,11 +27,24 @@ import { Sidebar } from "./Sidebar";
 
 beforeEach(() => {
   h.accounts = [];
+  h.lang = "zh";
   h.setLang.mockReset();
   localStorage.clear();
 });
 
 afterEach(cleanup);
+
+it("exposes the selected language and preserves the language button names", () => {
+  const { rerender } = render(<Sidebar route="#/budget" open />);
+  expect(screen.getByRole("button", { name: "中文" }).getAttribute("aria-pressed")).toBe("true");
+  expect(screen.getByRole("button", { name: "EN" }).getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "EN" }));
+  expect(h.setLang).toHaveBeenCalledWith("en");
+  h.lang = "en";
+  rerender(<Sidebar route="#/budget" open />);
+  expect(screen.getByRole("button", { name: "中文" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByRole("button", { name: "EN" }).getAttribute("aria-pressed")).toBe("true");
+});
 
 describe("Sidebar 账户行按账户币种格式化", () => {
   it("各行使用自己的 currencyCode，不把异币余额加总", () => {

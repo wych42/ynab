@@ -211,6 +211,7 @@ export function Sidebar({
               <button
                 key={l}
                 onClick={() => setLang(l)}
+                aria-pressed={lang === l}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   lang === l ? "bg-brand-600 text-white" : "text-slate-400 hover:text-white"
                 }`}
