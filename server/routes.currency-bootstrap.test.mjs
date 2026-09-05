@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeTempDataDir } from "./test-support/database.mjs";
 import { startTestApi } from "./test-support/http.mjs";
+import { snapshotClient } from "./test-support/snapshot-client.mjs";
 
 process.env.DATA_DIR = makeTempDataDir("ynab-currency-bootstrap-");
 
@@ -12,6 +13,8 @@ const server = await startTestApi(api);
 afterAll(() => server.close());
 
 const call = (method, url, body) => server.call(method, url, body);
+// Only successful setup writes opt in; migration-lock requests below remain raw.
+const setupCall = snapshotClient(server);
 
 const LOCK = "currency_migration_required";
 
@@ -61,7 +64,7 @@ describe("financial write lock while migration is pending", () => {
   let amountBeforeLock;
 
   beforeAll(async () => {
-    const created = await call("POST", "/api/accounts", {
+    const created = await setupCall("POST", "/api/accounts", {
       name: "现金",
       type: "cash",
       currencyCode: "CNY",
@@ -75,7 +78,7 @@ describe("financial write lock while migration is pending", () => {
     const spendGroup = boot.json.groups.find((group) => !group.is_income);
     categoryId = spendGroup.categories[0].id;
 
-    const posted = await call("POST", "/api/transactions", {
+    const posted = await setupCall("POST", "/api/transactions", {
       accountId,
       date: "2026-08-01",
       amount: -2500,

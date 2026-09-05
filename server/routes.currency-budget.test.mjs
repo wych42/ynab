@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { makeTempDataDir } from "./test-support/database.mjs";
 import { startTestApi } from "./test-support/http.mjs";
+import { snapshotClient } from "./test-support/snapshot-client.mjs";
 
 process.env.DATA_DIR = makeTempDataDir("ynab-routes-currency-budget-");
 
@@ -10,7 +11,8 @@ const { db, uid, createAccount, currentMonth, addMonths } = await import("./db.m
 const server = await startTestApi(api);
 afterAll(() => server.close());
 
-const call = (method, url, body) => server.call(method, url, body);
+// Ordinary scenarios carry a fresh read snapshot; revision-protocol cases use server.call.
+const call = snapshotClient(server);
 const month = currentMonth();
 
 async function revisionOf(currency, m = month) {

@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { budgetDbPath, makeTempDataDir } from "./test-support/database.mjs";
 import { snapshotFinancialAmounts } from "./test-support/finance-fixtures.mjs";
 import { startTestApi } from "./test-support/http.mjs";
+import { snapshotClient } from "./test-support/snapshot-client.mjs";
 
 process.env.DATA_DIR = makeTempDataDir("ynab-currency-accounts-");
 
@@ -12,7 +13,8 @@ const { createAccountRecord } = await import("./account-currency.mjs");
 const server = await startTestApi(api);
 afterAll(() => server.close());
 
-const call = (method, url, body) => server.call(method, url, body);
+// Ordinary scenarios carry a fresh read snapshot; revision-protocol cases use server.call.
+const call = snapshotClient(server);
 
 function expectCurrencyError(result, code) {
   expect(result.status).toBe(400);

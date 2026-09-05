@@ -145,6 +145,7 @@ describe("page budget writes require expectedRevision", () => {
 
 describe("cross-currency transfers bump both ledgers", () => {
   it("increments CNY and SGD revision together", async () => {
+    const snapshot = await call("GET", "/api/bootstrap");
     const cnyBefore = ledgerRevision("CNY");
     const sgdBefore = ledgerRevision("SGD");
     const posted = await call("POST", "/api/transfers", {
@@ -153,6 +154,7 @@ describe("cross-currency transfers bump both ledgers", () => {
       date: `${MONTH}-08`,
       fromAmountMinor: 10_000,
       toAmountMinor: 55_000,
+      expectedRevision: snapshot.json.ledgerRevisions,
     });
     expect(posted.status).toBe(200);
     expect(ledgerRevision("CNY")).toBe(cnyBefore + 1);
@@ -162,6 +164,7 @@ describe("cross-currency transfers bump both ledgers", () => {
   it("does not treat a single number expectedRevision as a skip", async () => {
     const cnyBefore = ledgerRevision("CNY");
     const sgdBefore = ledgerRevision("SGD");
+    const transactionsBefore = db.prepare("SELECT * FROM transactions ORDER BY id").all();
     const posted = await call("POST", "/api/transfers", {
       fromId: sgd,
       toId: cny,
@@ -170,10 +173,30 @@ describe("cross-currency transfers bump both ledgers", () => {
       toAmountMinor: 55_000,
       expectedRevision: Math.max(cnyBefore, sgdBefore) + 1,
     });
-    expect(posted.status).toBe(409);
-    expect(posted.json.code).toBe("budget_revision_conflict");
+    expect(posted.status).toBe(400);
+    expect(posted.json.code).toBe("expected_revision_required");
     expect(ledgerRevision("CNY")).toBe(cnyBefore);
     expect(ledgerRevision("SGD")).toBe(sgdBefore);
+    expect(db.prepare("SELECT * FROM transactions ORDER BY id").all()).toEqual(transactionsBefore);
+  });
+
+  it.each(["CNY", "SGD"])("rejects a complete map with stale %s without writing either leg", async staleCurrency => {
+    const snapshot = await call("GET", "/api/bootstrap");
+    const before = snapshot.json.ledgerRevisions;
+    const transactionsBefore = db.prepare("SELECT * FROM transactions ORDER BY id").all();
+    const posted = await call("POST", "/api/transfers", {
+      fromId: sgd,
+      toId: cny,
+      date: `${MONTH}-09`,
+      fromAmountMinor: 10_000,
+      toAmountMinor: 55_000,
+      expectedRevision: { ...before, [staleCurrency]: before[staleCurrency] - 1 },
+    });
+    expect(posted.status).toBe(409);
+    expect(posted.json.code).toBe("budget_revision_conflict");
+    expect(ledgerRevision("CNY")).toBe(before.CNY);
+    expect(ledgerRevision("SGD")).toBe(before.SGD);
+    expect(db.prepare("SELECT * FROM transactions ORDER BY id").all()).toEqual(transactionsBefore);
   });
 });
 

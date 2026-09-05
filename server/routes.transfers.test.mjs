@@ -3,6 +3,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { snapshotClient } from "./test-support/snapshot-client.mjs";
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "ynab-routes-test-"));
 
@@ -18,7 +19,7 @@ const server = app.listen(0);
 const base = `http://127.0.0.1:${server.address().port}`;
 afterAll(() => server.close());
 
-const call = async (method, url, body) => {
+const rawCall = async (method, url, body) => {
   const res = await fetch(base + url, {
     method,
     headers: { "content-type": "application/json" },
@@ -26,6 +27,8 @@ const call = async (method, url, body) => {
   });
   return { status: res.status, json: await res.json() };
 };
+// Ordinary scenarios carry a fresh read snapshot; revision-protocol cases use rawCall.
+const call = snapshotClient(rawCall);
 
 // 模拟旧版/演示数据：转账两条腿均无 pair_id
 function insertLegacyPair(fromId, toId, date, amount) {
