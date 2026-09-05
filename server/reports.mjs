@@ -272,7 +272,7 @@ export function createReportsModule({ db, fx } = {}) {
         .all()
         .map((row) => row.id)
     );
-    const isIncome = (categoryId) => (categoryId ? incomeCatIds.has(categoryId) : true);
+    const isIncome = (categoryId, amount) => (categoryId ? incomeCatIds.has(categoryId) : amount > 0);
     const byCode = new Map(
       enabled.map((code) => [
         code,
@@ -292,7 +292,7 @@ export function createReportsModule({ db, fx } = {}) {
       const entry = byCode.get(tx.currency_code);
       if (!entry) continue;
       entry.active = true;
-      if (isIncome(tx.category_id)) entry.incomeMinor += tx.amount;
+      if (isIncome(tx.category_id, tx.amount)) entry.incomeMinor += tx.amount;
       else if (tx.amount < 0) entry.expenseMinor += -tx.amount;
     }
     for (const entry of byCode.values()) {

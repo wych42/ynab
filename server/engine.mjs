@@ -314,14 +314,14 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
       .all()
       .map((r) => r.id)
   );
-  const isIncome = (catId) => (catId ? incomeCatIds.has(catId) : true);
+  const isIncome = (catId, amount) => (catId ? incomeCatIds.has(catId) : amount > 0);
 
   for (const t of txRows) {
     if (!t.ob || t.is_start || t.is_reconcile_adjustment) continue;
     const m = t.date.slice(0, 7);
     if (!incomeByM.has(m)) continue;
     if (t.transfer_account_id) continue;
-    if (isIncome(t.category_id)) incomeByM.set(m, incomeByM.get(m) + t.amount);
+    if (isIncome(t.category_id, t.amount)) incomeByM.set(m, incomeByM.get(m) + t.amount);
     else if (t.amount < 0) expenseByM.set(m, expenseByM.get(m) - t.amount);
   }
 
@@ -349,8 +349,8 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
     if (!t.ob || t.is_start || t.is_reconcile_adjustment || t.transfer_account_id) continue;
     const m = t.date.slice(0, 7);
     if (m < firstM || m > cur) continue;
-    if (t.amount < 0) {
-      if (t.category_id) breakdown.set(t.category_id, (breakdown.get(t.category_id) || 0) - t.amount);
+    if (t.amount < 0 && !isIncome(t.category_id, t.amount)) {
+      breakdown.set(t.category_id, (breakdown.get(t.category_id) || 0) - t.amount);
       const p = (t.payee_name || "").trim();
       if (p && p !== "__starting__" && p !== "__reconciling__") payeeMap.set(p, (payeeMap.get(p) || 0) - t.amount);
     } else if (t.category_id && incomeCatIds.has(t.category_id)) {
@@ -369,7 +369,7 @@ export function buildNativeReport({ currencyCode, months: countMonths = 12 } = {
     totalLiabilities: liabilities,
     netWorthNow: assets - liabilities,
     breakdown: [...breakdown.entries()]
-      .map(([id, value]) => ({ name: catNames.get(id) || id, value }))
+      .map(([id, value]) => ({ name: id == null ? "未分类" : catNames.get(id) || id, value }))
       .sort((x, y) => y.value - x.value)
       .slice(0, 10),
     topPayees: [...payeeMap.entries()]
