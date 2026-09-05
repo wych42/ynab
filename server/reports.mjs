@@ -1,4 +1,4 @@
-import { addMonths, currentMonth, endOfMonth } from "./db.mjs";
+import { addMonths, currentMonth, endOfMonth, todayYmd } from "./db.mjs";
 import { requireEnabledCurrency } from "./account-currency.mjs";
 import { listEnabledCurrencyCodes } from "./currency-state.mjs";
 import { MoneyError, convertAmount } from "./money.mjs";
@@ -110,7 +110,7 @@ function presentFx(quoted) {
   };
 }
 
-export function createReportsModule({ db, fx } = {}) {
+export function createReportsModule({ db, fx, today = todayYmd } = {}) {
   if (!db) throw new ReportsError("invalid_request", "reports module requires a database");
   if (!fx || (typeof fx.getRate !== "function" && typeof fx.convert !== "function")) {
     throw new ReportsError("invalid_request", "reports module requires an fx module");
@@ -214,6 +214,9 @@ export function createReportsModule({ db, fx } = {}) {
   async function buildNetWorthReport({ reportingCurrency, asOf, months } = {}) {
     const code = requireEnabledCurrency(db, reportingCurrency);
     const asOfDate = parseYmd(asOf, ReportsError, "invalid_date");
+    if (asOfDate > today()) {
+      throw new ReportsError("future_valuation_date", "valuation date must be today or earlier in the household timezone");
+    }
     const monthCount = parseMonths(months);
     const { accounts, txByAccount } = loadLedger();
     const rateCache = new Map();
