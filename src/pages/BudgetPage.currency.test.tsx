@@ -207,6 +207,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BudgetPage 按 URL 币种请求并展示", () => {
+  it("横向滚动只覆盖预算表，主控件独立于宽表区域", async () => {
+    render(<BudgetPage />);
+    await screen.findByText("Groceries");
+    const table = screen.getByRole("region", { name: "预算表" });
+    expect(table.contains(screen.getByText("Groceries"))).toBe(true);
+    expect(table.contains(screen.getByLabelText("预算账本"))).toBe(false);
+    expect(table.contains(screen.getByRole("button", { name: "移动资金" }))).toBe(false);
+    for (let element = screen.getByLabelText("预算账本").parentElement; element; element = element.parentElement) {
+      expect(element.className.includes("min-w-[1060px]")).toBe(false);
+    }
+  });
+
   it("停用币种回退并加载完成后仍保留可读原因", async () => {
     localStorage.setItem("activeBudgetCurrency", "SGD");
     window.location.hash = "#/budget?currency=CAD";

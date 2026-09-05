@@ -275,10 +275,10 @@ export function BudgetPage() {
   return (
     <BudgetCurrencyContext.Provider value={currency}><BudgetWriteContext.Provider value={writeApi}>
     {conflictDialog}
-    <div className="flex h-full">
-      <div className="flex h-full min-w-[1060px] flex-1 flex-col">
+    <div className="flex h-full min-w-0 max-w-full">
+      <div className="flex h-full min-w-0 flex-1 flex-col">
         {/* Header */}
-        <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="sticky top-0 z-20 min-w-0 shrink-0 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 pb-2 pt-3 md:px-6">
             <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
             <BudgetCurrencyNotice notice={currencyNotice} />
@@ -316,17 +316,17 @@ export function BudgetPage() {
             </div>
 
             {/* RTA */}
-            <div className="relative" ref={rtaMenuRef}>
+            <div className="relative max-w-full" ref={rtaMenuRef}>
               <button
                 onClick={() => setSel(sel?.kind === "rta" ? null : { kind: "rta" })}
-                className={`flex items-baseline gap-2 rounded-xl px-4 py-2 shadow-sm transition-all ${
+                className={`flex max-w-full flex-wrap items-baseline gap-2 rounded-xl px-4 py-2 shadow-sm transition-all ${
                   cur.readyToAssign < 0
                     ? "bg-rose-600 text-white hover:bg-rose-700"
                     : "bg-gradient-to-r from-brand-600 to-brand-500 text-white hover:brightness-110"
                 } ${sel?.kind === "rta" ? "ring-2 ring-offset-2 ring-brand-300" : ""}`}
               >
                 <span className="text-xs font-medium opacity-90">{t("budget_rta")}</span>
-                <span className="num text-lg font-bold">{money(cur.readyToAssign)}</span>
+                <span className="num break-all text-lg font-bold">{money(cur.readyToAssign)}</span>
                 <ChevronDown size={14} className="self-center opacity-70" />
               </button>
               {sel?.kind === "rta" && (
@@ -356,7 +356,7 @@ export function BudgetPage() {
               )}
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:ml-auto lg:w-auto">
               {overspentCats.length > 0 && (
                 <Btn variant="danger" onClick={() => setCoverOpen(true)}>
                   <AlertTriangle size={14} />
@@ -369,11 +369,11 @@ export function BudgetPage() {
               </Btn>
               <Btn onClick={() => { setAddGroupId(""); setAddOpen("group"); }} title={t("budget_addGroup")}>
                 <Plus size={14} />
-                <span className="hidden xl:inline">{t("budget_addGroup")}</span>
+                <span>{t("budget_addGroup")}</span>
               </Btn>
               <Btn variant="primary" onClick={() => { setAddGroupId(""); setAddOpen("category"); }} title={t("budget_addCategory")}>
                 <Plus size={14} />
-                <span className="hidden xl:inline">{t("budget_addCategory")}</span>
+                <span>{t("budget_addCategory")}</span>
               </Btn>
             </div>
           </div>
@@ -418,7 +418,12 @@ export function BudgetPage() {
             </a>
           )}
 
-          {/* Column headers */}
+        </div>
+
+        <div role="region" aria-label={lang === "zh" ? "预算表" : "Budget table"} tabIndex={0} className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div className={needsFunding ? "min-w-0" : "min-w-[1060px]"}>
+          {/* Column headers scroll together with the category rows. */}
+          {!needsFunding && <>
           <div className={`${GRID} px-4 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 md:px-6`}>
             <div>{t("nav_budget").toUpperCase()}</div>
             {monthsWin.map((m) => (
@@ -444,7 +449,7 @@ export function BudgetPage() {
               </div>
             ))}
           </div>
-        </div>
+          </>}
 
         {/* Table body */}
         <div className="flex-1 space-y-4 px-3 py-4">
@@ -474,6 +479,8 @@ export function BudgetPage() {
             />
           ))}
           {boot.groups.some(g => g.categories.some(c => c.hidden)) && <details className="rounded border bg-white p-3 text-sm"><summary>{lang === "zh" ? "已隐藏分类" : "Hidden categories"}</summary>{boot.groups.flatMap(g => g.categories).filter(c => c.hidden).map(c => <div key={c.id} className="mt-2 flex items-center justify-between"><span>{c.name}</span><button className="text-brand-600" onClick={quietWrite(async () => { if (!confirm(t("budget_categoryShare"))) return; await writeApi.updateCategory(c.id, { hidden: false }); await Promise.all([load(base, currency), refreshBoot()]); })}>{lang === "zh" ? "恢复分类" : "Restore category"}</button></div>)}</details>}
+        </div>
+          </div>
         </div>
       </div>
 
