@@ -91,7 +91,13 @@ export function applyLedgerRevisionGuard(database, currencyCodes, expectedRevisi
   const codes = uniqueCodes(currencyCodes);
   const isMap = expectedRevision && typeof expectedRevision === "object" && !Array.isArray(expectedRevision);
   for (const code of codes) {
-    const expected = isMap ? expectedRevision[code] : expectedRevision;
+    let expected = expectedRevision;
+    if (isMap) {
+      if (!Object.prototype.hasOwnProperty.call(expectedRevision, code)) {
+        parsePageExpectedRevision(undefined);
+      }
+      expected = parsePageExpectedRevision(expectedRevision[code]);
+    }
     assertLedgerRevision(database, code, expected);
   }
 }

@@ -8,6 +8,7 @@ const {
   applyLedgerRevisionGuard,
   bumpLedgerRevision,
   isBudgetRevisionError,
+  isExpectedRevisionRequiredError,
   readLedgerRevision,
 } = await import("./budget-revision.mjs");
 
@@ -47,5 +48,17 @@ describe("applyLedgerRevisionGuard", () => {
     }
     expect(isBudgetRevisionError(error)).toBe(true);
     expect(error.extra.currencyCode).toBe("SGD");
+  });
+
+  it("rejects a map that omits any affected ledger", () => {
+    const cny = readLedgerRevision(db, "CNY");
+    let error = null;
+    try {
+      applyLedgerRevisionGuard(db, ["CNY", "SGD"], { CNY: cny });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(isExpectedRevisionRequiredError(error)).toBe(true);
+    expect(error.status).toBe(400);
   });
 });

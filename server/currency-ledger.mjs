@@ -85,6 +85,38 @@ function getAccount(database, id, { notFoundCode = "account_not_found", notFound
   return acc;
 }
 
+function affectedBudgetCurrencies(database, transactions) {
+  const accountIds = new Set();
+  for (const tx of transactions || []) {
+    if (tx?.account_id) accountIds.add(tx.account_id);
+    if (tx?.transfer_account_id) accountIds.add(tx.transfer_account_id);
+  }
+  if (accountIds.size === 0) return [];
+  const ids = [...accountIds];
+  const placeholders = ids.map(() => "?").join(",");
+  return [
+    ...new Set(
+      database
+        .prepare(`SELECT currency_code FROM accounts WHERE on_budget=1 AND id IN (${placeholders})`)
+        .all(...ids)
+        .map((row) => row.currency_code)
+    ),
+  ];
+}
+
+function affectedBudgetCurrenciesForAccounts(database, accountIds) {
+  return affectedBudgetCurrencies(
+    database,
+    accountIds.filter(Boolean).map((accountId) => ({ account_id: accountId }))
+  );
+}
+
+function runLedgerMutation(database, currencyCodes, expectedRevision, write) {
+  if (currencyCodes.length > 0) return runBudgetWrite(database, currencyCodes, expectedRevision, write);
+  const run = database.transaction(write);
+  return run();
+}
+
 function parseOriginal(input, accountCurrencyCode) {
   const hasCode = input.originalCurrencyCode != null && input.originalCurrencyCode !== "";
   const hasAmount = input.originalAmountMinor != null && input.originalAmountMinor !== "";
@@ -213,7 +245,8 @@ export function postTransaction(database, input = {}, options = {}) {
       originalAmountMinor: original.originalAmountMinor,
     });
   };
-  if (acc.on_budget) runBudgetWrite(database, [acc.currency_code], input.expectedRevision, write);
+  if (options.skipRevision) write();
+  else if (acc.on_budget) runBudgetWrite(database, [acc.currency_code], input.expectedRevision, write);
   else {
     const run = database.transaction(write);
     run();
@@ -298,7 +331,15 @@ export function postTransfer(database, input = {}, options = {}) {
       pairId,
     });
   };
-  runBudgetWrite(database, [fromAcc.currency_code, toAcc.currency_code], input.expectedRevision, write);
+  const affectedCurrencies = [
+    ...new Set(
+      [fromAcc, toAcc]
+        .filter((account) => account.on_budget)
+        .map((account) => account.currency_code)
+    ),
+  ];
+  if (options.skipRevision) write();
+  else runLedgerMutation(database, affectedCurrencies, input.expectedRevision, write);
   return { pairId, sourceId, destId };
 }
 
@@ -348,12 +389,12 @@ export function deletePair(database, tx) {
   }
 }
 
-export function deleteTransaction(database, id) {
+export function deleteTransaction(database, id, expectedRevision) {
   const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
   if (!existing) throw new CurrencyLedgerError("not_found", "not found");
   if (existing.is_start) throw new CurrencyLedgerError("cannot_delete_starting_balance", "cannot delete starting balance");
-  const run = database.transaction(() => deletePair(database, existing));
-  run();
+  const affectedCurrencies = affectedBudgetCurrencies(database, [existing]);
+  runLedgerMutation(database, affectedCurrencies, expectedRevision, () => deletePair(database, existing));
   return { ok: true };
 }
 
@@ -364,25 +405,36 @@ export function updateTransaction(database, id, body = {}) {
   const keepId = existing.id;
   const keepPair = existing.pair_id;
   const cleared = body.cleared ?? !!existing.cleared;
+  const input = { ...body, cleared };
+  const transfer = transferInputFromHttp(input);
+  const newAccountIds = transfer ? [transfer.fromId, transfer.toId] : [input.accountId];
+  const affectedCurrencies = [
+    ...new Set([
+      ...affectedBudgetCurrencies(database, [existing]),
+      ...affectedBudgetCurrenciesForAccounts(database, newAccountIds),
+    ]),
+  ];
   let result = { ok: true, id: keepId };
-  const run = database.transaction(() => {
+  runLedgerMutation(database, affectedCurrencies, body.expectedRevision, () => {
     deletePair(database, existing);
-    const input = { ...body, cleared };
-    const transfer = transferInputFromHttp(input);
     if (transfer) {
       result = {
         ok: true,
-        ...postTransfer(database, transfer, { keepId, keepPair, keepAccountId: existing.account_id }),
+        ...postTransfer(database, transfer, {
+          keepId,
+          keepPair,
+          keepAccountId: existing.account_id,
+          skipRevision: true,
+        }),
       };
     } else {
-      postTransaction(database, { ...input, id: keepId }, { keepId });
+      postTransaction(database, { ...input, id: keepId }, { keepId, skipRevision: true });
     }
   });
-  run();
   return result;
 }
 
-export function setTransactionCategory(database, id, categoryId) {
+export function setTransactionCategory(database, id, categoryId, expectedRevision) {
   const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
   if (!existing) throw new CurrencyLedgerError("not_found", "not found");
   if (existing.is_start) {
@@ -396,11 +448,15 @@ export function setTransactionCategory(database, id, categoryId) {
     throw new CurrencyLedgerError("unknown_category", "unknown category");
   }
   const resolved = resolveCategoryId(database, requested, existing.amount);
-  database.prepare("UPDATE transactions SET category_id=? WHERE id=?").run(resolved, existing.id);
+  if (resolved === existing.category_id) return { ok: true };
+  const affectedCurrencies = affectedBudgetCurrencies(database, [existing]);
+  runLedgerMutation(database, affectedCurrencies, expectedRevision, () => {
+    database.prepare("UPDATE transactions SET category_id=? WHERE id=?").run(resolved, existing.id);
+  });
   return { ok: true };
 }
 
-export function setTransactionsCategory(database, ids, categoryId) {
+export function setTransactionsCategory(database, ids, categoryId, expectedRevision) {
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
     throw new CurrencyLedgerError("ids_required", "ids required");
   }
@@ -408,33 +464,48 @@ export function setTransactionsCategory(database, ids, categoryId) {
   if (requested && !database.prepare("SELECT 1 FROM categories WHERE id=?").get(requested)) {
     throw new CurrencyLedgerError("unknown_category", "unknown category");
   }
+  const candidates = [];
+  for (const id of ids) {
+    const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
+    if (!existing || existing.is_start) continue;
+    if (existing.transfer_account_id) {
+      throw new CurrencyLedgerError("transfer_category_managed", "transfer category is managed by postTransfer");
+    }
+    if (requested && existing.amount < 0 && isIncomeCategory(database, requested)) {
+      throw new CurrencyLedgerError("income_category_requires_positive_amount", "income category requires positive amount");
+    }
+    if (existing.category_id !== requested) candidates.push(existing);
+  }
+  if (candidates.length === 0) return { ok: true, changed: 0 };
+
   let changed = 0;
   const setStmt = database.prepare(
     "UPDATE transactions SET category_id=? WHERE id=? AND is_start=0 AND category_id IS NOT ?"
   );
-  const run = database.transaction(() => {
-    for (const id of ids) {
-      const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
-      if (!existing || existing.is_start) continue;
-      if (existing.transfer_account_id) {
-        throw new CurrencyLedgerError("transfer_category_managed", "transfer category is managed by postTransfer");
-      }
-      if (requested && existing.amount < 0 && isIncomeCategory(database, requested)) {
-        throw new CurrencyLedgerError("income_category_requires_positive_amount", "income category requires positive amount");
-      }
-      changed += setStmt.run(requested, id, requested).changes;
+  const affectedCurrencies = affectedBudgetCurrencies(database, candidates);
+  runLedgerMutation(database, affectedCurrencies, expectedRevision, () => {
+    for (const existing of candidates) {
+      changed += setStmt.run(requested, existing.id, requested).changes;
     }
   });
-  run();
   return { ok: true, changed };
 }
 
-export function deleteTransactions(database, ids) {
+export function deleteTransactions(database, ids, expectedRevision) {
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== "string")) {
     throw new CurrencyLedgerError("ids_required", "ids required");
   }
+  const candidates = [];
+  for (const id of ids) {
+    const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
+    if (!existing || existing.is_start) continue;
+    candidates.push(existing);
+  }
+  if (candidates.length === 0) return { ok: true, changed: 0 };
+
   let changed = 0;
-  const run = database.transaction(() => {
+  const affectedCurrencies = affectedBudgetCurrencies(database, candidates);
+  runLedgerMutation(database, affectedCurrencies, expectedRevision, () => {
     for (const id of ids) {
       const existing = database.prepare("SELECT * FROM transactions WHERE id=?").get(id);
       if (!existing || existing.is_start) continue;
@@ -442,7 +513,6 @@ export function deleteTransactions(database, ids) {
       changed++;
     }
   });
-  run();
   return { ok: true, changed };
 }
 
