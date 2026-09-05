@@ -1,4 +1,4 @@
-import { quietWrite, isWriteCancelled } from "../writeCancellation";
+import { quietWrite, isWriteCancelled, WriteCancelled } from "../writeCancellation";
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -29,6 +29,7 @@ import { budgetNeedsFunding } from "../budgetEmptyState";
 
 const BudgetCurrencyContext = createContext("");
 const BudgetWriteContext = createContext(api);
+const BudgetWriteOriginContext = createContext<(element: HTMLElement) => void>(() => {});
 
 function useCollapsedGroups() {
   const [collapsed, setCollapsed] = useState<string[]>(() => {
@@ -281,7 +282,7 @@ export function BudgetPage() {
   const needsFunding = budgetNeedsFunding(cur, boot.accounts.filter(a => !a.closed && a.on_budget && a.currencyCode === currency));
 
   return (
-    <BudgetCurrencyContext.Provider value={currency}><BudgetWriteContext.Provider value={writeApi}>
+    <BudgetCurrencyContext.Provider value={currency}><BudgetWriteContext.Provider value={writeApi}><BudgetWriteOriginContext.Provider value={setWriteOrigin}>
     {conflictDialog}
     <div className="flex h-full min-w-0 max-w-full">
       <div className="flex h-full min-w-0 flex-1 flex-col">
@@ -615,7 +616,7 @@ export function BudgetPage() {
         />
       )}
     </div>
-    </BudgetWriteContext.Provider></BudgetCurrencyContext.Provider>
+    </BudgetWriteOriginContext.Provider></BudgetWriteContext.Provider></BudgetCurrencyContext.Provider>
   );
 }
 
@@ -978,6 +979,8 @@ function Inspector({
   const api = useContext(BudgetWriteContext);
   const { currency, money } = useBudgetMoney();
   const [custom, setCustom] = useState("");
+  const customInput = useRef<HTMLInputElement>(null);
+  const setOrigin = useContext(BudgetWriteOriginContext);
 
   const cat = sel.kind === "cat" ? sel.cat : null;
   useEffect(() => {
@@ -987,10 +990,19 @@ function Inspector({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const assign = quietWrite(async (cents: number) => {
+  const assign = async (cents: number) => {
     if (!cat || !currency) return;
     onApply(await api.assign(data.month, cat.id, cents, currency, data.revision));
     toast(money(cents) + " ✓");
+  };
+  const submitCustom = quietWrite(async () => {
+    if (!currency) return;
+    let cents: number;
+    try { cents = parseAmountToMinor(custom, currency); } catch { return; }
+    if (cents < 0) return;
+    if (customInput.current) setOrigin(customInput.current);
+    await assign(cents);
+    setCustom("");
   });
 
   const goalForm = useMemo(() => {
@@ -1029,7 +1041,7 @@ function Inspector({
                 ? "这是尚未分配任何任务的钱。YNAB 第一法则：给每一块钱一个任务，把它分配到下面的分类里。"
                 : "This is money with no job yet. Rule one: give every dollar a job by assigning it below."}
             </p>
-            <Btn variant="primary" className="mt-4 w-full" onClick={() => currency && api.autoAssign(data.month, currency, data.revision).then(onApply)}>
+            <Btn variant="primary" className="mt-4 w-full" onClick={quietWrite(() => currency && api.autoAssign(data.month, currency, data.revision).then(onApply))}>
               <Sparkles size={14} /> {t("budget_autoAssign")}
             </Btn>
             <Btn className="mt-2 w-full" onClick={onMove}>
@@ -1093,32 +1105,18 @@ function Inspector({
                 )}
                 <div className="flex gap-1.5 pt-1">
                   <input
+                    ref={customInput}
                     className={inputCls + " num"}
                     placeholder={t("inspector_custom")}
                     value={custom}
                     onChange={(e) => setCustom(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && currency) {
-                        try {
-                          const cents = parseAmountToMinor(custom, currency);
-                          if (cents >= 0) assign(cents).then(() => setCustom(""));
-                        } catch {
-                          // invalid amount for this currency
-                        }
-                      }
+                      if (e.key === "Enter") void submitCustom();
                     }}
                   />
                   <Btn
                     variant="primary"
-                    onClick={() => {
-                      if (!currency) return;
-                      try {
-                        const cents = parseAmountToMinor(custom, currency);
-                        if (cents >= 0) assign(cents).then(() => setCustom(""));
-                      } catch {
-                        // invalid amount for this currency
-                      }
-                    }}
+                    onClick={submitCustom}
                   >
                     ✓
                   </Btn>
@@ -1130,12 +1128,13 @@ function Inspector({
               <div className="mt-5 border-t border-slate-100 pt-4">
                 <NoteEditor
                   note={cat.note ?? ""}
-                  onSave={quietWrite(async (note) => {
-                    if (!confirm(t("budget_categoryShare"))) return;
+                  onSave={async (note, origin) => {
+                    if (!confirm(t("budget_categoryShare"))) throw new WriteCancelled();
+                    if (origin) setOrigin(origin);
                     await api.updateCategory(cat.id, { note });
                     if (currency) onApply(await api.budget(data.month, currency));
                     toast("✓");
-                  })}
+                  }}
                 />
                 <button className="mt-3 text-sm text-slate-600" onClick={quietWrite(async () => {
                   if (!confirm(t("budget_categoryShare"))) return;
@@ -1209,14 +1208,16 @@ function SectionTitle({
   );
 }
 
-function NoteEditor({ note, onSave }: { note: string; onSave: (note: string) => Promise<void> }) {
+function NoteEditor({ note, onSave }: { note: string; onSave: (note: string, origin: HTMLTextAreaElement | null) => Promise<void> }) {
   const { t } = useApp();
   const [value, setValue] = useState(note);
   const [saved, setSaved] = useState(note);
+  const input = useRef<HTMLTextAreaElement>(null);
   return (
     <>
       <Field label={t("inspector_note")}>
         <textarea
+          ref={input}
           className={inputCls + " min-h-[96px] resize-y"}
           placeholder={t("inspector_notePlaceholder")}
           value={value}
@@ -1228,7 +1229,10 @@ function NoteEditor({ note, onSave }: { note: string; onSave: (note: string) => 
           variant="primary"
           className="w-full"
           onClick={quietWrite(async () => {
-            await onSave(value);
+            if (input.current) {
+              input.current.focus();
+            }
+            await onSave(value, input.current);
             setSaved(value);
           })}
         >
@@ -1242,7 +1246,7 @@ function NoteEditor({ note, onSave }: { note: string; onSave: (note: string) => 
 function QuickBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
-      onClick={onClick}
+      onClick={quietWrite(onClick)}
       className="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-[13px] font-medium text-slate-600 shadow-sm transition-all hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700"
     >
       {label}

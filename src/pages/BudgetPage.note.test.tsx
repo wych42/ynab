@@ -135,5 +135,37 @@ describe("BudgetPage Inspector 备注维护", () => {
     await waitFor(() => expect(window.confirm).toHaveBeenCalledWith("budget_categoryShare"));
     expect(h.updateCategory).not.toHaveBeenCalled();
     expect((box as HTMLTextAreaElement).value).toBe("保留草稿");
+    expect(screen.getByText("common_save")).toBeTruthy();
+    expect(document.activeElement).toBe(box);
+  });
+
+  it("取消备注版本冲突后仍能保存草稿并返回备注输入", async () => {
+    h.updateCategory.mockRejectedValueOnce({ code: "category_revision_conflict", categoryRevision: 4, groups: [] });
+    await openInspector();
+    const box = await screen.findByLabelText("inspector_note");
+    fireEvent.change(box, { target: { value: "冲突草稿" } });
+    screen.getByText("common_save").focus();
+    fireEvent.click(screen.getByText("common_save"));
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "取消" })).toBeNull());
+    expect(screen.getByText("common_save")).toBeTruthy();
+    expect((box as HTMLTextAreaElement).value).toBe("冲突草稿");
+    await waitFor(() => expect(document.activeElement).toBe(box));
+    expect(h.updateCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it("明确重试成功后才结束备注编辑", async () => {
+    h.updateCategory.mockRejectedValueOnce({ code: "category_revision_conflict", categoryRevision: 4, groups: [] });
+    await openInspector();
+    const box = await screen.findByLabelText("inspector_note");
+    fireEvent.change(box, { target: { value: "重试草稿" } });
+    fireEvent.click(screen.getByText("common_save"));
+    const retry = await screen.findByRole("button", { name: "重新提交我的修改" });
+    expect(screen.getByText("common_save")).toBeTruthy();
+    fireEvent.click(retry);
+    await waitFor(() => expect(screen.queryByText("common_save")).toBeNull());
+    expect(h.updateCategory).toHaveBeenLastCalledWith("cat-1", { note: "重试草稿" }, 4);
+    expect((box as HTMLTextAreaElement).value).toBe("重试草稿");
+    expect(document.activeElement).toBe(box);
   });
 });

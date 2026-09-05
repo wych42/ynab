@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { Bootstrap, BudgetData, CurrencyRecord } from "../types";
 import { formatMoney } from "../money";
 import { ApiError } from "../api";
@@ -49,6 +49,8 @@ function budgetData(month: string, assigned: number): BudgetData {
 const h = vi.hoisted(() => ({
   budget: vi.fn(),
   assign: vi.fn(),
+  autoAssign: vi.fn(),
+  toast: vi.fn(),
   boot: {} as Bootstrap,
 }));
 
@@ -63,6 +65,7 @@ vi.mock("../api", async () => {
     api: {
       budget: (...args: unknown[]) => h.budget(...args),
       assign: (...args: unknown[]) => h.assign(...args),
+      autoAssign: (...args: unknown[]) => h.autoAssign(...args),
     },
   };
 });
@@ -70,7 +73,7 @@ vi.mock("../api", async () => {
 vi.mock("../store", async () => {
   const { makeT } = await import("../i18n");
   const t = makeT("zh");
-  const toast = vi.fn();
+  const toast = h.toast;
   const setLang = vi.fn();
   const refreshBoot = vi.fn().mockResolvedValue({});
   return {
@@ -92,6 +95,21 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
+it("keeps Inspector custom assignment and focus when conflict is canceled", async () => {
+  h.assign.mockRejectedValueOnce(Object.assign(new ApiError("conflict"), { code: "budget_revision_conflict", budget: budgetData("2026-09", 32209) }));
+  render(<BudgetPage />);
+  fireEvent.click(await screen.findByText("Groceries"));
+  const input = screen.getByPlaceholderText("自定义金额…");
+  input.focus();
+  fireEvent.change(input, { target: { value: "42" } });
+  fireEvent.keyDown(input, { key: "Enter" });
+  fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "取消" })).toBeNull());
+  expect((input as HTMLInputElement).value).toBe("42");
+  await waitFor(() => expect(document.activeElement).toBe(input));
+  expect(h.assign).toHaveBeenCalledTimes(1);
+});
+
 beforeEach(() => {
   window.location.hash = "#/budget?currency=CNY";
   h.boot = {
@@ -106,11 +124,33 @@ beforeEach(() => {
   } as unknown as Bootstrap;
   h.budget.mockReset().mockImplementation((month: string) => Promise.resolve(budgetData(month, 50_000)));
   h.assign.mockReset();
+  h.autoAssign.mockReset();
+  h.toast.mockClear();
 });
 
 afterEach(cleanup);
 
 describe("BudgetPage 409 conflict", () => {
+  it("cancels Inspector auto assignment without an unhandled rejection or success notice", async () => {
+    h.autoAssign.mockRejectedValueOnce(Object.assign(new ApiError("conflict"), { code: "budget_revision_conflict", budget: budgetData("2026-08", 32209) }));
+    const unhandled = vi.fn();
+    window.addEventListener("unhandledrejection", unhandled);
+    try {
+      render(<BudgetPage />);
+      fireEvent.click(await screen.findByText("待分配金额"));
+      const inspector = await screen.findByRole("dialog");
+      fireEvent.click(within(inspector).getByRole("button", { name: "一键分配至目标" }));
+      fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+      await waitFor(() => expect(screen.queryByRole("button", { name: "取消" })).toBeNull());
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(h.toast).not.toHaveBeenCalled();
+      expect(h.autoAssign).toHaveBeenCalledTimes(1);
+      expect(within(inspector).getByRole("button", { name: "一键分配至目标" })).toBeTruthy();
+    } finally {
+      window.removeEventListener("unhandledrejection", unhandled);
+    }
+  });
   it("retry keeps one write in flight and focuses the saved assignment cell", async () => {
     const err = new ApiError("budget_revision_conflict");
     err.code = "budget_revision_conflict";
