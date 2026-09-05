@@ -111,6 +111,52 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BudgetPage 409 conflict", () => {
+  it("retry keeps one write in flight and focuses the saved assignment cell", async () => {
+    const err = new ApiError("budget_revision_conflict");
+    err.code = "budget_revision_conflict";
+    err.budget = budgetData("2026-08", 32209);
+    let resolveRetry!: (data: BudgetData) => void;
+    h.assign.mockRejectedValueOnce(err).mockImplementation(() => new Promise(resolve => { resolveRetry = resolve; }));
+    render(<BudgetPage />);
+    const buttons = await screen.findAllByRole("button", { name: formatMoney(50000, "CNY", { locale: "zh-CN" }) });
+    fireEvent.click(buttons[1]);
+    const input = await screen.findByDisplayValue("500.00");
+    fireEvent.change(input, { target: { value: "42" } });
+    buttons[2].focus();
+    const retry = await screen.findByRole("button", { name: "重新提交我的修改" });
+    fireEvent.click(retry);
+    fireEvent.click(retry);
+    const cancel = screen.getByRole("button", { name: "取消" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    fireEvent.click(cancel);
+    expect(screen.getByText("预算已在另一设备更新")).toBeTruthy();
+    expect(h.assign).toHaveBeenCalledTimes(2);
+    resolveRetry(budgetData("2026-08", 4200));
+    await waitFor(() => expect(screen.queryByDisplayValue("42")).toBeNull());
+    const saved = document.getElementById("budget-assignment-cat-1-2026-08")?.querySelector("button");
+    expect(saved?.textContent).toContain("42.00");
+    expect(document.activeElement === saved).toBe(true);
+  });
+
+  it("cancel after Tab blur returns focus to the original draft without resubmitting", async () => {
+    const err = new ApiError("budget_revision_conflict");
+    err.code = "budget_revision_conflict";
+    err.budget = budgetData("2026-08", 32209);
+    h.assign.mockRejectedValue(err);
+    render(<BudgetPage />);
+    const buttons = await screen.findAllByRole("button", { name: formatMoney(50000, "CNY", { locale: "zh-CN" }) });
+    fireEvent.click(buttons[1] ?? buttons[0]);
+    const input = await screen.findByDisplayValue("500.00");
+    fireEvent.change(input, { target: { value: "42" } });
+    buttons[2].focus();
+    await screen.findByText("预算已在另一设备更新");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(screen.queryByText("预算已在另一设备更新")).toBeNull());
+    expect((screen.getByDisplayValue("42") as HTMLInputElement).value).toBe("42");
+    expect(document.activeElement === screen.getByDisplayValue("42")).toBe(true);
+    expect(h.assign).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps the user input, shows the latest server value, and does not auto-retry", async () => {
     const err = new ApiError("budget_revision_conflict");
     err.code = "budget_revision_conflict";

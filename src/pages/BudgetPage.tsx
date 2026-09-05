@@ -79,7 +79,13 @@ export function BudgetPage() {
   const rtaMenuRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const restoreCurrencyFocus = useRef<string | null>(null);
-  const { client: writeApi, conflictDialog } = useWriteClient({ ...boot, categoryRevision: win?.data[base]?.categoryRevision ?? boot?.categoryRevision }, lang, () => setCopying(false));
+  const savedAssignmentFocus = useRef<string | null>(null);
+  const { client: writeApi, conflictDialog, setWriteOrigin } = useWriteClient({ ...boot, categoryRevision: win?.data[base]?.categoryRevision ?? boot?.categoryRevision }, lang, () => setCopying(false));
+  useLayoutEffect(() => {
+    if (editing || !savedAssignmentFocus.current) return;
+    if (document.activeElement === document.body) document.getElementById(savedAssignmentFocus.current)?.querySelector<HTMLButtonElement>("button")?.focus();
+    savedAssignmentFocus.current = null;
+  });
 
   useEffect(() => {
     if (!base && boot) setBase(boot.currentMonth);
@@ -210,7 +216,7 @@ export function BudgetPage() {
     });
   };
 
-  const commitAssign = quietWrite(async (month: string, catId: string, value: string) => {
+  const commitAssign = quietWrite(async (month: string, catId: string, value: string, origin?: HTMLInputElement) => {
     if (!currencyRef.current) return;
     let cents: number;
     try {
@@ -220,7 +226,9 @@ export function BudgetPage() {
     }
     if (cents < 0) return;
     try {
+      if (origin) setWriteOrigin(origin);
       apply(await writeApi.assign(month, catId, cents, currencyRef.current, win?.data[month]?.revision));
+      savedAssignmentFocus.current = `budget-assignment-${catId}-${month}`;
       setEditing(null);
       setConflict(null);
     } catch (err) {
@@ -749,7 +757,7 @@ function GroupBlock({
   onSelect: (s: Selection) => void;
   editing: { catId: string; month: string; value: string } | null;
   setEditing: React.Dispatch<React.SetStateAction<{ catId: string; month: string; value: string } | null>>;
-  onCommitAssign: (month: string, catId: string, v: string) => void;
+  onCommitAssign: (month: string, catId: string, v: string, origin?: HTMLInputElement) => void;
   onMenu: (e: React.MouseEvent, id: string) => void;
   onQuickAdd: () => void;
 }) {
@@ -830,7 +838,7 @@ function GroupBlock({
               }}
               onChange={(v) => setEditing((e) => (e && e.catId === c.id ? { ...e, value: v } : e))}
               onCancelEdit={() => setEditing(null)}
-              onCommit={(m, v) => onCommitAssign(m, c.id, v)}
+              onCommit={(m, v, origin) => onCommitAssign(m, c.id, v, origin)}
             />
           ))}
           {!group.virtual && (
@@ -874,7 +882,7 @@ function Row({
   onStartEdit: (month: string) => void;
   onChange: (v: string) => void;
   onCancelEdit: () => void;
-  onCommit: (month: string, v: string) => void;
+  onCommit: (month: string, v: string, origin?: HTMLInputElement) => void;
 }) {
   const { money } = useBudgetMoney();
   return (
@@ -905,16 +913,16 @@ function Row({
                 />
               </div>
             )}
-            <div className="text-right" onClick={(e) => e.stopPropagation()}>
+            <div id={`budget-assignment-${catId}-${m}`} className="text-right" onClick={(e) => e.stopPropagation()}>
               {isEditing ? (
                 <input
                   autoFocus
                   className="cell-input"
                   value={editingValue ?? ""}
                   onChange={(e) => onChange(e.target.value)}
-                  onBlur={() => onCommit(m, editingValue ?? "")}
+                  onBlur={(event) => onCommit(m, editingValue ?? "", event.currentTarget)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") onCommit(m, editingValue ?? "");
+                    if (e.key === "Enter") onCommit(m, editingValue ?? "", e.currentTarget);
                     if (e.key === "Escape") onCancelEdit();
                   }}
                 />

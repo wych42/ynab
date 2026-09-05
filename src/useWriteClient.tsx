@@ -5,7 +5,7 @@ import { formatAccountMoney, formatMinorInput } from "./format";
 import { isVersionedWrite, writeArguments, type WriteSnapshot } from "./writeContext";
 import { WriteCancelled } from "./writeCancellation";
 
-type Conflict = { error: ApiError; name: string; original: unknown[]; retry: () => void; cancel: () => void };
+type Conflict = { error: ApiError; name: string; original: unknown[]; origin: HTMLElement | null; retry: () => void; cancel: () => void };
 function draftLines(conflict: Conflict, lang: string): string[] {
   const en = lang === "en";
   const args = conflict.original;
@@ -44,29 +44,38 @@ export function useWriteClient(snapshot: WriteSnapshot | null | undefined, lang:
   const cancelRef = useRef(onCancel);
   cancelRef.current = onCancel;
   const [conflict, setConflict] = useState<Conflict | null>(null);
+  const [writing, setWriting] = useState(false);
   const pending = useRef(false);
   const pendingReject = useRef<((error: Error) => void) | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const nextOrigin = useRef<HTMLElement | null>(null);
   useEffect(() => () => { pendingReject.current?.(new WriteCancelled()); pendingReject.current = null; }, []);
   useEffect(() => {
     if (!conflict) return;
-    const prior = document.activeElement as HTMLElement | null;
+    const prior = conflict.origin;
     dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => { if (prior?.isConnected) prior.focus(); };
   }, [conflict]);
+  useEffect(() => { if (conflict && writing) dialogRef.current?.focus(); }, [conflict, writing]);
   const client = useMemo(() => new Proxy(api, {
     get(target, property) {
       const name = String(property);
       const method = target[name as keyof typeof api];
       if (!isVersionedWrite(name)) return method;
       return (...original: unknown[]) => {
+        const origin = nextOrigin.current ?? document.activeElement as HTMLElement | null;
+        nextOrigin.current = null;
         if (pending.current) return Promise.reject(new WriteCancelled());
         pending.current = true;
         const captured = read.current ?? {};
         return new Promise((resolve, reject) => {
           pendingReject.current = reject;
           const finish = () => { pending.current = false; pendingReject.current = null; };
+          let attemptInFlight = false;
           const attempt = async (version: WriteSnapshot, retry = false) => {
+            if (attemptInFlight) return;
+            attemptInFlight = true;
+            setWriting(true);
             try {
               const result = await (method as (...args: unknown[]) => Promise<unknown>)(...writeArguments(name, original, version, retry));
               setConflict(null);
@@ -76,7 +85,10 @@ export function useWriteClient(snapshot: WriteSnapshot | null | undefined, lang:
               const error = caught as ApiError;
               if (error?.code !== "budget_revision_conflict" && error?.code !== "category_revision_conflict") { finish(); reject(caught); return; }
               const latest = { ledgerRevisions: error.ledgerRevisions ?? (error.budget ? { [error.budget.currencyCode]: error.budget.revision! } : undefined), categoryRevision: error.categoryRevision };
-              setConflict({ error, name, original, retry: () => { setConflict(null); void attempt(latest, true); }, cancel: () => { finish(); setConflict(null); reject(new WriteCancelled()); cancelRef.current?.(); } });
+              setConflict({ error, name, original, origin, retry: () => { void attempt(latest, true); }, cancel: () => { if (attemptInFlight) return; finish(); setConflict(null); reject(new WriteCancelled()); cancelRef.current?.(); } });
+            } finally {
+              attemptInFlight = false;
+              setWriting(false);
             }
           };
           void attempt(captured);
@@ -86,9 +98,10 @@ export function useWriteClient(snapshot: WriteSnapshot | null | undefined, lang:
   }), []);
   const en = lang === "en";
   const conflictDialog = conflict && (
-    <div ref={dialogRef} className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="write-conflict-title" onKeyDown={event => {
+    <div ref={dialogRef} tabIndex={-1} className="fixed inset-0 z-[200] flex items-center justify-center bg-black/30 p-4" role="dialog" aria-modal="true" aria-labelledby="write-conflict-title" onKeyDown={event => {
       if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); conflict.cancel(); }
       if (event.key === "Tab") {
+        if (writing) { event.preventDefault(); return; }
         const buttons = dialogRef.current?.querySelectorAll<HTMLButtonElement>("button");
         if (!buttons?.length) return;
         if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons[buttons.length - 1].focus(); }
@@ -104,9 +117,10 @@ export function useWriteClient(snapshot: WriteSnapshot | null | undefined, lang:
         {conflict.error.budget && <ul className="my-2 text-sm"><li>{en ? "Ready to assign" : "待分配"}：{formatAccountMoney(conflict.error.budget.readyToAssign, conflict.error.budget.currencyCode, lang)}</li>{conflict.error.budget.groups.flatMap(g => g.categories).map(c => <li key={c.id}>{c.name}：{formatAccountMoney(c.assigned, conflict.error.budget!.currencyCode, lang)}{c.goal && ` / ${en ? "Goal" : "目标"}: ${formatAccountMoney(c.goal.target, conflict.error.budget!.currencyCode, lang)}`}</li>)}</ul>}
         {conflict.error.accounts?.map(a => <div className="text-sm" key={a.id}>{a.name}：{formatAccountMoney(a.balance, a.currencyCode, lang)}</div>)}
         {conflict.error.code === "category_revision_conflict" && conflict.error.groups?.map(g => <div className="my-2 text-sm" key={g.id}><strong>{g.name}</strong>{g.categories.map(c => <div key={c.id}>{c.name}{c.note ? `：${c.note}` : ""}{c.hidden ? (en ? " (hidden)" : "（已隐藏）") : ""}</div>)}</div>)}
-        <div className="mt-4 flex gap-3"><button className="rounded bg-brand-600 px-3 py-2 text-white" onClick={conflict.retry}>{en ? "Retry my changes" : "重新提交我的修改"}</button><button className="rounded border px-3 py-2" onClick={conflict.cancel}>{en ? "Cancel" : "取消"}</button></div>
+        <div className="mt-4 flex gap-3"><button disabled={writing} className="rounded bg-brand-600 px-3 py-2 text-white disabled:opacity-50" onClick={conflict.retry}>{en ? "Retry my changes" : "重新提交我的修改"}</button><button disabled={writing} className="rounded border px-3 py-2 disabled:opacity-50" onClick={conflict.cancel}>{en ? "Cancel" : "取消"}</button></div>
+        {writing && <p role="status" className="mt-2 text-sm">{en ? "Submitting your changes…" : "正在提交修改…"}</p>}
       </div>
     </div>
   );
-  return { client, conflictDialog };
+  return { client, conflictDialog, setWriteOrigin: (element: HTMLElement) => { nextOrigin.current = element; } };
 }
