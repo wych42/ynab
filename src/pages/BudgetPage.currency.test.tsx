@@ -207,6 +207,27 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("BudgetPage 按 URL 币种请求并展示", () => {
+  it("停用币种回退并加载完成后仍保留可读原因", async () => {
+    localStorage.setItem("activeBudgetCurrency", "SGD");
+    window.location.hash = "#/budget?currency=CAD";
+    render(<BudgetPage />);
+    await screen.findByText("Groceries");
+    await waitFor(() => expect(parseHash(window.location.hash).query.currency).toBe("SGD"));
+    expect(screen.getByRole("status").textContent).toContain("CAD 已停用，已显示 SGD");
+  });
+
+  it("已加载预算切换币种后焦点仍在预算账本选择器", async () => {
+    render(<BudgetPage />);
+    await screen.findByText("Groceries");
+    const selector = screen.getByLabelText("预算账本") as HTMLSelectElement;
+    selector.focus();
+    fireEvent.change(selector, { target: { value: "SGD" } });
+    await screen.findByText("Groceries");
+    await waitFor(() => expect(h.budgetCalls.filter(call => call.currency === "SGD").length).toBeGreaterThanOrEqual(3));
+    expect((screen.getByLabelText("预算账本") as HTMLSelectElement).value).toBe("SGD");
+    expect(document.activeElement === screen.getByLabelText("预算账本")).toBe(true);
+  });
+
   it("打开 #/budget?currency=USD 时每个月份请求都带 USD，标题区选择器是预算账本", async () => {
     window.location.hash = "#/budget?currency=USD";
     render(<BudgetPage />);

@@ -1,5 +1,5 @@
 import { quietWrite, isWriteCancelled } from "../writeCancellation";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -78,6 +78,7 @@ export function BudgetPage() {
   const { collapsed, toggle } = useCollapsedGroups();
   const rtaMenuRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
+  const restoreCurrencyFocus = useRef<string | null>(null);
   const { client: writeApi, conflictDialog } = useWriteClient({ ...boot, categoryRevision: win?.data[base]?.categoryRevision ?? boot?.categoryRevision }, lang, () => setCopying(false));
 
   useEffect(() => {
@@ -104,11 +105,13 @@ export function BudgetPage() {
       reportingCurrency: boot.settings.reportingCurrency,
       storedCurrency: readStoredBudgetCurrency(),
     });
-    setCurrencyNotice(result.notice);
+    setCurrencyNotice(previous => result.notice ?? (previous?.fallback === result.currency ? previous : null));
     if (result.currency) persistBudgetCurrency(result.currency);
   }, [boot, route]);
 
   const switchCurrency = (code: string) => {
+    restoreCurrencyFocus.current = document.activeElement?.id === "budget-ledger-currency" ? code : null;
+    setCurrencyNotice(null);
     persistBudgetCurrency(code);
     const parsed = parseHash(window.location.hash);
     pushHash(formatHash("/budget", { ...parsed.query, currency: code }));
@@ -146,7 +149,14 @@ export function BudgetPage() {
     return arr;
   }, [win, base]);
 
-  const loaded = !!win?.data[base];
+  const loaded = !!win?.data[base] && win.data[base].currencyCode === urlCurrency;
+  useLayoutEffect(() => {
+    if (!urlCurrency || restoreCurrencyFocus.current !== urlCurrency) return;
+    const selector = document.getElementById("budget-ledger-currency");
+    if (document.activeElement === document.body || document.activeElement?.id === "budget-ledger-currency") selector?.focus({ preventScroll: true });
+    const emptyLedger = boot && !boot.accounts.some(account => !account.closed && account.on_budget && account.currencyCode === urlCurrency);
+    if (loaded || emptyLedger) restoreCurrencyFocus.current = null;
+  }, [urlCurrency, loaded, boot]);
   useEffect(() => {
     if (!loaded) return;
     stripRef.current?.querySelector(`[data-m="${base}"]`)?.scrollIntoView({ inline: "center", block: "nearest" });
@@ -160,6 +170,7 @@ export function BudgetPage() {
   if (boot.accounts.length > 0 && !hasOnBudget) {
     return (
       <EmptyCurrencyLedger
+        notice={currencyNotice}
         currency={currency}
         enabled={boot.enabledCurrencies}
         onSwitch={switchCurrency}
@@ -172,6 +183,7 @@ export function BudgetPage() {
       <div className="flex h-full flex-col">
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur md:px-6">
           <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
+          <BudgetCurrencyNotice notice={currencyNotice} />
         </div>
         <Spinner />
       </div>
@@ -269,13 +281,7 @@ export function BudgetPage() {
         <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex flex-wrap items-center gap-3 px-4 pb-2 pt-3 md:px-6">
             <BudgetLedgerSelect currency={currency} enabled={boot.enabledCurrencies} onChange={switchCurrency} />
-            {currencyNotice && (
-              <div role="status" aria-live="polite" className="text-xs font-medium text-amber-700">
-                {currencyNotice.reason === "disabled"
-                  ? t("currency_disabled", { code: currencyNotice.requested, fallback: currencyNotice.fallback })
-                  : t("currency_unsupported", { code: currencyNotice.requested, fallback: currencyNotice.fallback })}
-              </div>
-            )}
+            <BudgetCurrencyNotice notice={currencyNotice} />
             {conflict && (
               <div role="status" aria-live="polite" className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <div className="font-semibold">{t("budget_conflict")}</div>
@@ -1548,10 +1554,12 @@ function BudgetLedgerSelect({
 }
 
 function EmptyCurrencyLedger({
+  notice,
   currency,
   enabled,
   onSwitch,
 }: {
+  notice: CurrencyNotice | null;
   currency: string;
   enabled: string[];
   onSwitch: (code: string) => void;
@@ -1561,6 +1569,7 @@ function EmptyCurrencyLedger({
     <div className="flex h-full items-center justify-center bg-gradient-to-b from-slate-50 to-slate-100 p-8">
       <div className="anim-pop max-w-lg text-center">
         <h1 className="text-2xl font-bold text-slate-900">{t("budget_emptyLedger", { code: currency })}</h1>
+        <BudgetCurrencyNotice notice={notice} />
         <div className="mt-8 flex flex-col items-center gap-4">
           <a
             href={`#/accounts?createCurrency=${encodeURIComponent(currency)}`}
@@ -1576,6 +1585,12 @@ function EmptyCurrencyLedger({
       </div>
     </div>
   );
+}
+
+function BudgetCurrencyNotice({ notice }: { notice: CurrencyNotice | null }) {
+  const { t } = useApp();
+  if (!notice) return null;
+  return <div role="status" aria-live="polite" className="text-xs font-medium text-amber-700">{t(notice.reason === "disabled" ? "currency_disabled" : "currency_unsupported", { code: notice.requested, fallback: notice.fallback })}</div>;
 }
 
 function EmptyStart() {
