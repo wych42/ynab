@@ -6,6 +6,8 @@ const h = vi.hoisted(() => {
   const budgetData = (month: string) => ({
     month,
     currencyCode: "CNY",
+    revision: 4,
+    categoryRevision: 3,
     months: ["2026-02"],
     maxMonth: "2026-04",
     readyToAssign: 10000,
@@ -99,11 +101,12 @@ describe("BudgetPage Inspector 备注维护", () => {
   beforeAll(() => {
     Element.prototype.scrollIntoView = vi.fn();
   });
-  afterEach(cleanup);
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); });
   beforeEach(() => {
     localStorage.clear();
     window.location.hash = "#/budget?currency=CNY";
     h.updateCategory.mockClear();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
   });
 
   it("备注编辑框显示分类已有的多行备注", async () => {
@@ -117,8 +120,20 @@ describe("BudgetPage Inspector 备注维护", () => {
     const box = await screen.findByLabelText("inspector_note");
     fireEvent.change(box, { target: { value: "改成新的备注" } });
     fireEvent.click(screen.getByText("common_save"));
+    expect(window.confirm).toHaveBeenCalledWith("budget_categoryShare");
     await waitFor(() => {
-      expect(h.updateCategory).toHaveBeenCalledWith("cat-1", { note: "改成新的备注" });
+      expect(h.updateCategory).toHaveBeenCalledWith("cat-1", { note: "改成新的备注" }, 3);
     });
+  });
+
+  it("拒绝共享修改确认时保留备注草稿且不写入", async () => {
+    vi.mocked(window.confirm).mockReturnValue(false);
+    await openInspector();
+    const box = await screen.findByLabelText("inspector_note");
+    fireEvent.change(box, { target: { value: "保留草稿" } });
+    fireEvent.click(screen.getByText("common_save"));
+    await waitFor(() => expect(window.confirm).toHaveBeenCalledWith("budget_categoryShare"));
+    expect(h.updateCategory).not.toHaveBeenCalled();
+    expect((box as HTMLTextAreaElement).value).toBe("保留草稿");
   });
 });

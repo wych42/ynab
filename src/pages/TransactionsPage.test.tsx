@@ -29,9 +29,12 @@ vi.mock("../store", async () => {
   return {
     useApp: () => ({
       boot: {
+        enabledCurrencies: ["CNY"],
+        ledgerRevisions: { CNY: 4 },
+        categoryRevision: 2,
         accounts: [
-          { id: "acc-1", name: "现金", type: "cash", on_budget: 1, closed: 0 },
-          { id: "acc-2", name: "储蓄卡", type: "checking", on_budget: 1, closed: 0 },
+          { id: "acc-1", name: "现金", type: "cash", on_budget: 1, closed: 0, currencyCode: "CNY" },
+          { id: "acc-2", name: "储蓄卡", type: "checking", on_budget: 1, closed: 0, currencyCode: "CNY" },
         ],
         payees: [],
         groups: [
@@ -73,6 +76,7 @@ function tx(partial: Partial<Tx>): Tx {
     cleared: 0,
     reconciled: 0,
     account_name: "现金",
+    currencyCode: "CNY",
     ...partial,
   };
 }
@@ -80,6 +84,8 @@ function tx(partial: Partial<Tx>): Tx {
 beforeEach(() => {
   vi.clearAllMocks();
   h.transactions.mockResolvedValue({
+    ledgerRevisions: { CNY: 4 },
+    categoryRevision: 2,
     total: 2,
     transactions: [
       tx({ id: "tx-b", date: "2026-08-20", payeeName: "书店" }),
@@ -129,7 +135,7 @@ describe("TransactionsPage", () => {
       Array.from((el as HTMLSelectElement).options).some((o) => o.value === "cat-food")
     )!;
     fireEvent.change(rowSelect, { target: { value: "cat-traffic" } });
-    await waitFor(() => expect(h.setTxCategory).toHaveBeenCalledWith("tx-b", "cat-traffic"));
+    await waitFor(() => expect(h.setTxCategory).toHaveBeenCalledWith("tx-b", "cat-traffic", { CNY: 4 }));
   });
 
   it("勾选多笔后批量设置分类", async () => {
@@ -141,7 +147,7 @@ describe("TransactionsPage", () => {
     fireEvent.click(checkboxes[2]);
     expect(screen.getByText("已选 2 笔")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /清除分类/ }));
-    await waitFor(() => expect(h.bulkSetCategory).toHaveBeenCalledWith(["tx-b", "tx-a"], null));
+    await waitFor(() => expect(h.bulkSetCategory).toHaveBeenCalledWith(["tx-b", "tx-a"], null, { CNY: 4 }));
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
   });
 
@@ -156,7 +162,7 @@ describe("TransactionsPage", () => {
     await waitFor(() =>
       expect(confirmSpy).toHaveBeenCalledWith("确定删除选中的 2 笔交易吗？转账会连同对侧记录一起删除。")
     );
-    expect(h.bulkDeleteTx).toHaveBeenCalledWith(["tx-b", "tx-a"]);
+    expect(h.bulkDeleteTx).toHaveBeenCalledWith(["tx-b", "tx-a"], { CNY: 4 });
     await waitFor(() => expect(h.toast).toHaveBeenCalled());
     // 删除后清空选择
     await waitFor(() => expect(screen.queryByText("已选 2 笔")).toBeNull());
@@ -175,7 +181,9 @@ describe("TransactionsPage", () => {
   });
 
   it("total 大于已加载数量时显示加载更多并追加数据", async () => {
-    h.transactions.mockResolvedValueOnce({ total: 3, transactions: [tx({ id: "tx-b" }), tx({ id: "tx-a" })] }).mockResolvedValueOnce({
+    h.transactions.mockResolvedValueOnce({ ledgerRevisions: { CNY: 4 }, categoryRevision: 2, total: 3, transactions: [tx({ id: "tx-b" }), tx({ id: "tx-a" })] }).mockResolvedValueOnce({
+      ledgerRevisions: { CNY: 4 },
+      categoryRevision: 2,
       total: 3,
       transactions: [tx({ id: "tx-c", date: "2026-07-01", payeeName: "地铁" })],
     });
