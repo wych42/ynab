@@ -21,26 +21,9 @@ import { displayFxRate, displayFxSource, fmtMoney, fmtMonthShort, localeForLang 
 import { coerceEnabledCurrency, formatHash, parseHash, pushHash, replaceHash, useHashRoute, type CurrencyNotice } from "../hashRoute";
 import type { CashflowDetail, CashflowOverview, InvestmentList, NetWorthReport } from "../types";
 import { Spinner } from "../components/ui";
+import { householdToday, resolveNetWorthRoute, type ValuationDateNotice } from "../netWorthRoute";
 
 const PALETTE = ["#6a63f0", "#10b981", "#f59e0b", "#ef4444", "#0ea5e9", "#8b5cf6", "#ec4899", "#84cc16", "#14b8a6", "#f97316"];
-
-function todayYmd(timeZone?: string | null) {
-  try {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: timeZone || "UTC",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    }).formatToParts(new Date());
-    const year = parts.find((part) => part.type === "year")?.value;
-    const month = parts.find((part) => part.type === "month")?.value;
-    const day = parts.find((part) => part.type === "day")?.value;
-    if (year && month && day) return `${year}-${month}-${day}`;
-  } catch {
-    // fall through to UTC
-  }
-  return new Date().toISOString().slice(0, 10);
-}
 
 function reportsSection(path: string): "cashflow" | "investments" | "net-worth" {
   if (path.startsWith("/reports/investments")) return "investments";
@@ -113,21 +96,17 @@ export function ReportsPage() {
     : enabled[0] ?? null;
 
   useEffect(() => {
-    if (section === "investments") {
+    if (section !== "cashflow") {
       setNotice(null);
       return;
     }
     const requested = parsed.query.currency;
     const coerced = coerceEnabledCurrency(requested, enabled, supported, fallback);
     if (coerced.notice && coerced.currency) {
-      setNotice({ ...coerced.notice, section, displayedCurrency: section === "cashflow" ? "" : coerced.currency });
-      if (section === "net-worth") {
-        replaceHash(formatHash("/reports/net-worth", { currency: coerced.currency, asOf: parsed.query.asOf || "" }));
-      } else if (section === "cashflow") {
-        const nextQuery = { ...parsed.query };
-        delete nextQuery.currency;
-        replaceHash(formatHash("/reports/cashflow", nextQuery));
-      }
+      setNotice({ ...coerced.notice, section, displayedCurrency: "" });
+      const nextQuery = { ...parsed.query };
+      delete nextQuery.currency;
+      replaceHash(formatHash("/reports/cashflow", nextQuery));
       return;
     }
     // Retain the explanation on the normalized destination. Clear it only when
@@ -395,30 +374,40 @@ function InvestmentReportPage() {
 function NetWorthPage() {
   const { boot, t } = useApp();
   const route = useHashRoute();
-  const parsed = parseHash(route);
-  const reportingDefault = boot?.settings.reportingCurrency ?? boot?.enabledCurrencies[0] ?? null;
-  const timezone = boot?.settings.timezone ?? null;
-  const asOfDefault = todayYmd(timezone);
-  const currency = parsed.query.currency || reportingDefault;
-  const asOf = parsed.query.asOf || asOfDefault;
-  const { data, error, retry } = useReportRequest<NetWorthReport>(currency && asOf ? `${currency}|${asOf}` : null, async () => {
+  const enabled = boot?.enabledCurrencies ?? [];
+  const reportingDefault = boot?.settings.reportingCurrency && enabled.includes(boot.settings.reportingCurrency)
+    ? boot.settings.reportingCurrency : enabled[0] ?? null;
+  const today = boot ? householdToday(boot.settings.timezone) : "";
+  const resolved = resolveNetWorthRoute(route, {
+    today, enabled, supported: (boot?.supportedCurrencies ?? []).map(item => item.code), fallback: reportingDefault,
+  });
+  const { currency, asOf, hash: canonicalHash, dateNotice, currencyNotice } = resolved;
+  const [recovery, setRecovery] = useState<{
+    hash: string; date: ValuationDateNotice | null; currency: CurrencyNotice | null;
+  } | null>(null);
+  const ready = !!boot && !!currency;
+  const { data, error, retry } = useReportRequest<NetWorthReport>(ready ? `${currency}|${asOf}` : null, async () => {
     const report = await api.netWorthReport({ reportingCurrency: currency ?? "", months: 12, asOf });
     if (report.reportingCurrency !== currency) throw new Error("Unexpected report currency");
     return report;
   });
 
   useEffect(() => {
-    if (!reportingDefault) return;
-    if (parsed.path !== "/reports/net-worth") return;
-    if (!parsed.query.currency || !parsed.query.asOf) {
-      replaceHash(formatHash("/reports/net-worth", { currency: currency ?? reportingDefault, asOf }));
+    if (!ready) return;
+    if (dateNotice || currencyNotice) {
+      setRecovery({ hash: canonicalHash, date: dateNotice, currency: currencyNotice });
+    } else {
+      setRecovery(previous => previous?.hash === canonicalHash ? previous : null);
     }
-  }, [reportingDefault, parsed.path, parsed.query.currency, parsed.query.asOf, currency, asOf]);
-
-  const enabled = boot?.enabledCurrencies ?? [];
+    if (route !== canonicalHash) replaceHash(canonicalHash);
+  }, [ready, route, canonicalHash, dateNotice, currencyNotice?.reason, currencyNotice?.requested]);
 
   return (
     <div>
+      <CurrencyFallbackNotice notice={recovery?.currency ? { ...recovery.currency, section: "net-worth", displayedCurrency: currency ?? "" } : null} />
+      {recovery?.date && <div role="status" aria-live="polite" className="mb-3 text-xs font-medium text-amber-700">
+        {t(recovery.date === "future" ? "rep_futureValuationDate" : "rep_invalidValuationDate", { date: asOf })}
+      </div>}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div role="group" aria-label={t("rep_convertTo")} className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-semibold text-slate-600">{t("rep_convertTo")}</span>
@@ -442,7 +431,12 @@ function NetWorthPage() {
             aria-label={t("rep_valuationDate")}
             className="rounded-md border border-slate-200 px-2 py-1 text-sm"
             value={asOf}
-            onChange={(e) => pushHash(formatHash("/reports/net-worth", { currency: currency ?? "", asOf: e.target.value }))}
+            max={today || undefined}
+            disabled={!ready}
+            onChange={(e) => {
+              const query = new URLSearchParams({ currency: currency ?? "", asOf: e.target.value });
+              pushHash(`#/reports/net-worth?${query.toString()}`);
+            }}
           />
         </label>
       </div>
