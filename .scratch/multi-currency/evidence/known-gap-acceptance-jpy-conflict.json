@@ -1,0 +1,7 @@
+{
+  "text": "Budget was updated on another device\n\nYour inputs are kept. Review the latest values before retrying.\n\nBudget ledger JPY\n\nYour input 123\n\nLatest value 678\n\nLatest values\n\nReady to assign：¥119,322\nAcceptance 餐饮：¥678\n餐饮外出：¥0\n交通出行：¥0\n日用百货：¥0\n话费网费：¥0\n房租房贷：¥0\n水电燃气：¥0\n订阅服务：¥0\n医疗保险：¥0\n应急基金：¥0\n旅行基金：¥0\n大额购物：¥0\n投资理财：¥0\n医疗健康：¥0\n学习提升：¥0\n人情往来：¥0\n宠物花费：¥0\n其他：¥0\n换汇转出：¥0\nCNY acceptance：CN¥26,000.00\nJPY acceptance：¥120,000\nRetry my changes\nCancel",
+  "cancel": {
+    "value": "123",
+    "focused": true
+  }
+}

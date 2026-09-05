@@ -1,0 +1,25 @@
+{
+  "before": {
+    "requests": [],
+    "hash": "#/reports/net-worth?currency=CAD&asOf=2099-01-01"
+  },
+  "after": {
+    "instant": "2026-09-04T10:30:00.000Z",
+    "machineDay": "2026-09-04",
+    "householdDay": "2026-09-05",
+    "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+    "input": "2026-09-05",
+    "max": "2026-09-05"
+  },
+  "futureInput": {
+    "historyBefore": 46,
+    "historyAfter": 47,
+    "requests": [
+      "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+    ],
+    "notices": [
+      "暂不支持未来日期估值，已改为家庭时区的今天（2026-09-05）。你也可以选择过去的日期。"
+    ]
+  },
+  "clear": []
+}

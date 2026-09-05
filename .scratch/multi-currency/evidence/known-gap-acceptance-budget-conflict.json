@@ -1,0 +1,21 @@
+{
+  "zh": "预算已在另一设备更新\n\n已保留你的输入。请核对最新值，再决定是否重新提交。\n\n预算账本 CNY\n\n你刚输入 123.45\n\n最新值 678.90\n\n最新值\n\n待分配：¥9,321.10\nAcceptance 餐饮：¥678.90\n餐饮外出：¥0.00\n交通出行：¥0.00\n日用百货：¥0.00\n话费网费：¥0.00\n房租房贷：¥0.00\n水电燃气：¥0.00\n订阅服务：¥0.00\n医疗保险：¥0.00\n应急基金：¥0.00\n旅行基金：¥0.00\n大额购物：¥0.00\n投资理财：¥0.00\n医疗健康：¥0.00\n学习提升：¥0.00\n人情往来：¥0.00\n宠物花费：¥0.00\n其他：¥0.00\n换汇转出：¥0.00\nCNY acceptance：¥10,000.00\nJPY acceptance：JP¥120,000\n重新提交我的修改\n取消",
+  "en": "Budget was updated on another device\n\nYour inputs are kept. Review the latest values before retrying.\n\nBudget ledger CNY\n\nYour input 123.45\n\nLatest value 678.90\n\nLatest values\n\nReady to assign：CN¥9,321.10\nAcceptance 餐饮：CN¥678.90\n餐饮外出：CN¥0.00\n交通出行：CN¥0.00\n日用百货：CN¥0.00\n话费网费：CN¥0.00\n房租房贷：CN¥0.00\n水电燃气：CN¥0.00\n订阅服务：CN¥0.00\n医疗保险：CN¥0.00\n应急基金：CN¥0.00\n旅行基金：CN¥0.00\n大额购物：CN¥0.00\n投资理财：CN¥0.00\n医疗健康：CN¥0.00\n学习提升：CN¥0.00\n人情往来：CN¥0.00\n宠物花费：CN¥0.00\n其他：CN¥0.00\n换汇转出：CN¥0.00\nCNY acceptance：CN¥10,000.00\nJPY acceptance：¥120,000\nRetry my changes\nCancel",
+  "cancelled": {
+    "value": "123.45",
+    "focused": true
+  },
+  "after": {
+    "id": "5e454f26-b4a8-42e8-a993-47d1bb8fce95",
+    "assigned": 12345,
+    "activity": 0,
+    "available": 12345,
+    "goal": null,
+    "need": null,
+    "lastAssigned": 0,
+    "avgSpend": 0,
+    "name": "Acceptance 餐饮",
+    "note": "User note {currency} 零 0"
+  },
+  "revision": 4
+}

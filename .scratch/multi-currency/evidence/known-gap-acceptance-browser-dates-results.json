@@ -1,0 +1,517 @@
+{
+  "base": "http://localhost:3102",
+  "today": "2026-09-05",
+  "timezone": "Pacific/Kiritimati",
+  "results": [
+    {
+      "id": "browser-date-missing",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 22,
+        "historyLength": 22,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=1#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 22
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=1#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 22
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-empty",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 23,
+        "historyLength": 23,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=2#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 23
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=2#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 23
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-malformed",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 24,
+        "historyLength": 24,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=3#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 24
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=3#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 24
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-overflow",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 25,
+        "historyLength": 25,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=4#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 25
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=4#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 25
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-nonpadded",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 26,
+        "historyLength": 26,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=5#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 26
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=5#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 26
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-yearzero",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 27,
+        "historyLength": 27,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=6#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 27
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=6#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 27
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-nonleap",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 28,
+        "historyLength": 28,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=7#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 28
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=7#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 28
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-datetime",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 29,
+        "historyLength": 29,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=8#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 29
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=8#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 29
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-future",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 30,
+        "historyLength": 30,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=9#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 30
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=9#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 30
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "Valuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nValuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-historical",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-01",
+        "initialHistory": 31,
+        "historyLength": 31,
+        "historyCalls": [],
+        "lang": "en-US",
+        "input": "2026-09-01",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-01"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-01\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-01\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-01\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-leap",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2024-02-29",
+        "initialHistory": 32,
+        "historyLength": 32,
+        "historyCalls": [],
+        "lang": "en-US",
+        "input": "2024-02-29",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2024-02-29"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2024-02-29\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2024-02-29\n\nCURRENT NET WORTH\nCN¥0.00\nASSETS\nCN¥0.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nOct\nNov\nDec\nJan\nFeb\nCN¥0.00\nCN¥0.01\nCN¥0.02\nCN¥0.03\nCN¥0.04\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE"
+      }
+    },
+    {
+      "id": "browser-date-today",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 33,
+        "historyLength": 33,
+        "historyCalls": [],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-both-invalid",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 34,
+        "historyLength": 34,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=13#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 34
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=13#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 34
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "CAD is disabled, showing CNY",
+          "The valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nCAD is disabled, showing CNY\nThe valuation date is invalid. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-both-future",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 35,
+        "historyLength": 35,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=14#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 35
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=14#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 35
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "AUD is not supported, showing CNY",
+          "Valuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nAUD is not supported, showing CNY\nValuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-preserve-history",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-01",
+        "initialHistory": 36,
+        "historyLength": 36,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=15#/reports/net-worth?currency=CNY&asOf=2026-09-01",
+            "before": 36
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=15#/reports/net-worth?currency=CNY&asOf=2026-09-01",
+            "before": 36
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-01",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "CAD is disabled, showing CNY"
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-01"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nCAD is disabled, showing CNY\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-01\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-01\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-01\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-warning-language",
+      "status": "PASS",
+      "evidence": {
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "initialHistory": 37,
+        "historyLength": 37,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=16#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 37
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=16#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 37
+          }
+        ],
+        "lang": "en-US",
+        "input": "2026-09-05",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [
+          "CAD is disabled, showing CNY",
+          "Valuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date."
+        ],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nCAD is disabled, showing CNY\nValuation for a future date is not supported. Showing today in the household timezone (2026-09-05). You can also choose a historical date.\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2026-09-05\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2026-09-05\n\nCURRENT NET WORTH\nCN¥16,000.00\nASSETS\nCN¥16,000.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nOct\nNov\nDec\nJan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nCN¥0.00\nCN¥4,000.00\nCN¥8,000.00\nCN¥12,000.00\nCN¥16,000.00\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE\nCNY acceptance\tCNY\tCN¥10,000.00\tCN¥10,000.00\t2026-09-05\tNo conversion needed\t1 CNY = CN¥1.00\nJPY acceptance\tJPY\t¥120,000\tCN¥6,000.00\t2026-09-01\tManual rate\t1 JPY = CN¥0.05"
+      }
+    },
+    {
+      "id": "browser-date-history-recovery",
+      "status": "PASS",
+      "evidence": {
+        "back": "http://localhost:3102/?kg=17#/reports/net-worth?currency=CNY&asOf=2026-09-01",
+        "forward": "http://localhost:3102/?kg=17#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+        "hash": "#/reports/net-worth?currency=CNY&asOf=2024-02-29",
+        "initialHistory": 38,
+        "historyLength": 40,
+        "historyCalls": [
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=17#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 39
+          },
+          {
+            "name": "replaceState",
+            "url": "http://localhost:3102/?kg=17#/reports/net-worth?currency=CNY&asOf=2026-09-05",
+            "before": 39
+          }
+        ],
+        "lang": "en-US",
+        "input": "2024-02-29",
+        "max": "2026-09-05",
+        "label": "Valuation date",
+        "notices": [],
+        "requests": [
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-01",
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05",
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-01",
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2026-09-05",
+          "http://localhost:3102/api/reports/net-worth?reportingCurrency=CNY&months=12&asOf=2024-02-29"
+        ],
+        "text": "Reports\nActivity by currency\nInvestments\nHousehold net worth\nConvert to\nCNY\nUSD\nSGD\nEUR\nJPY\nAs of 2024-02-29\n\nNet worth changes include account activity, investment valuation adjustments, and exchange-rate movements; they do not represent income minus expenses alone.\n\nReference exchange rates are for valuation only. Record actual currency exchanges using the real amounts booked at both ends.\n\nThese amounts are converted into the reporting currency at the requested valuation date. As of 2024-02-29\n\nCURRENT NET WORTH\nCN¥0.00\nASSETS\nCN¥0.00\nLIABILITIES\nCN¥0.00\nNet Worth\nView chart data\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nOct\nNov\nDec\nJan\nFeb\nCN¥0.00\nCN¥0.01\nCN¥0.02\nCN¥0.03\nCN¥0.04\nAccount details\nACCOUNT NAME\tACCOUNT CURRENCY\tNATIVE BALANCE\tCONVERTED AMOUNT\tRATE DATE\tSOURCE\tRATE"
+      }
+    }
+  ]
+}

@@ -1,0 +1,361 @@
+{
+  "base": "http://localhost:3102/api",
+  "time": "2026-09-05T09:26:05.450Z",
+  "fixtures": {
+    "today": "2026-09-05",
+    "tomorrow": "2026-09-06",
+    "timezone": "Pacific/Kiritimati",
+    "accounts": {
+      "CNY": "b5ecf727-3085-4114-87da-fe9252b7530f",
+      "JPY": "4bff4b68-445b-4801-a610-2516490c0afd"
+    },
+    "category": "5e454f26-b4a8-42e8-a993-47d1bb8fce95"
+  },
+  "results": [
+    {
+      "id": "API-date-\"\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"garbage\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2026-02-30\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be a real calendar day"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2026-2-03\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2026-13-01\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be a real calendar day"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"0000-01-01\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be a real calendar day"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2025-02-29\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be a real calendar day"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2026-09-01T00:00:00Z\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-date-\" 2026-09-01\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2026-09-06\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "future_valuation_date",
+          "code": "future_valuation_date",
+          "message": "valuation date must be today or earlier in the household timezone"
+        }
+      }
+    },
+    {
+      "id": "API-date-\"2099-01-01\"",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "future_valuation_date",
+          "code": "future_valuation_date",
+          "message": "valuation date must be today or earlier in the household timezone"
+        }
+      }
+    },
+    {
+      "id": "API-missing-date",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-repeated-date",
+      "status": "PASS",
+      "evidence": {
+        "status": 400,
+        "body": {
+          "error": "invalid_date",
+          "code": "invalid_date",
+          "message": "date must be YYYY-MM-DD"
+        }
+      }
+    },
+    {
+      "id": "API-valid-2026-09-05",
+      "status": "PASS",
+      "evidence": {
+        "reportingCurrency": "CNY",
+        "asOf": "2026-09-05",
+        "months": 1,
+        "complete": true,
+        "totalAssetsMinor": 1600000,
+        "totalLiabilitiesMinor": 0,
+        "netWorthMinor": 1600000,
+        "accounts": [
+          {
+            "id": "b5ecf727-3085-4114-87da-fe9252b7530f",
+            "name": "CNY acceptance",
+            "type": "checking",
+            "currencyCode": "CNY",
+            "nativeBalanceMinor": 1000000,
+            "convertedBalanceMinor": 1000000,
+            "fx": {
+              "from": "CNY",
+              "to": "CNY",
+              "asOfDate": "2026-09-05",
+              "rateDate": "2026-09-05",
+              "source": "identity",
+              "path": "identity",
+              "rate": "1"
+            }
+          },
+          {
+            "id": "4bff4b68-445b-4801-a610-2516490c0afd",
+            "name": "JPY acceptance",
+            "type": "checking",
+            "currencyCode": "JPY",
+            "nativeBalanceMinor": 120000,
+            "convertedBalanceMinor": 600000,
+            "fx": {
+              "from": "JPY",
+              "to": "CNY",
+              "asOfDate": "2026-09-05",
+              "rateDate": "2026-09-01",
+              "source": "manual",
+              "path": "direct",
+              "rate": "0.05"
+            }
+          }
+        ],
+        "history": [
+          {
+            "month": "2026-09",
+            "asOf": "2026-09-05",
+            "complete": true,
+            "totalAssetsMinor": 1600000,
+            "totalLiabilitiesMinor": 0,
+            "netWorthMinor": 1600000,
+            "missing": [],
+            "rates": [
+              {
+                "from": "CNY",
+                "to": "CNY",
+                "asOfDate": "2026-09-05",
+                "rateDate": "2026-09-05",
+                "source": "identity",
+                "path": "identity",
+                "rate": "1"
+              },
+              {
+                "from": "JPY",
+                "to": "CNY",
+                "asOfDate": "2026-09-05",
+                "rateDate": "2026-09-01",
+                "source": "manual",
+                "path": "direct",
+                "rate": "0.05"
+              }
+            ]
+          }
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": "API-valid-2026-09-01",
+      "status": "PASS",
+      "evidence": {
+        "reportingCurrency": "CNY",
+        "asOf": "2026-09-01",
+        "months": 1,
+        "complete": true,
+        "totalAssetsMinor": 1600000,
+        "totalLiabilitiesMinor": 0,
+        "netWorthMinor": 1600000,
+        "accounts": [
+          {
+            "id": "b5ecf727-3085-4114-87da-fe9252b7530f",
+            "name": "CNY acceptance",
+            "type": "checking",
+            "currencyCode": "CNY",
+            "nativeBalanceMinor": 1000000,
+            "convertedBalanceMinor": 1000000,
+            "fx": {
+              "from": "CNY",
+              "to": "CNY",
+              "asOfDate": "2026-09-01",
+              "rateDate": "2026-09-01",
+              "source": "identity",
+              "path": "identity",
+              "rate": "1"
+            }
+          },
+          {
+            "id": "4bff4b68-445b-4801-a610-2516490c0afd",
+            "name": "JPY acceptance",
+            "type": "checking",
+            "currencyCode": "JPY",
+            "nativeBalanceMinor": 120000,
+            "convertedBalanceMinor": 600000,
+            "fx": {
+              "from": "JPY",
+              "to": "CNY",
+              "asOfDate": "2026-09-01",
+              "rateDate": "2026-09-01",
+              "source": "manual",
+              "path": "direct",
+              "rate": "0.05"
+            }
+          }
+        ],
+        "history": [
+          {
+            "month": "2026-09",
+            "asOf": "2026-09-01",
+            "complete": true,
+            "totalAssetsMinor": 1600000,
+            "totalLiabilitiesMinor": 0,
+            "netWorthMinor": 1600000,
+            "missing": [],
+            "rates": [
+              {
+                "from": "CNY",
+                "to": "CNY",
+                "asOfDate": "2026-09-01",
+                "rateDate": "2026-09-01",
+                "source": "identity",
+                "path": "identity",
+                "rate": "1"
+              },
+              {
+                "from": "JPY",
+                "to": "CNY",
+                "asOfDate": "2026-09-01",
+                "rateDate": "2026-09-01",
+                "source": "manual",
+                "path": "direct",
+                "rate": "0.05"
+              }
+            ]
+          }
+        ],
+        "missing": []
+      }
+    },
+    {
+      "id": "API-valid-2024-02-29",
+      "status": "PASS",
+      "evidence": {
+        "reportingCurrency": "CNY",
+        "asOf": "2024-02-29",
+        "months": 1,
+        "complete": true,
+        "totalAssetsMinor": 0,
+        "totalLiabilitiesMinor": 0,
+        "netWorthMinor": 0,
+        "accounts": [],
+        "history": [
+          {
+            "month": "2024-02",
+            "asOf": "2024-02-29",
+            "complete": true,
+            "totalAssetsMinor": 0,
+            "totalLiabilitiesMinor": 0,
+            "netWorthMinor": 0,
+            "missing": [],
+            "rates": []
+          }
+        ],
+        "missing": []
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "zh": "共享分类已在另一设备更新已保留你的输入。请核对最新值，再决定是否重新提交。待提交的修改Acceptance 餐饮备注：中文 draft $& {currency} {fallback} 零 0\nSecond line最新值收入工资薪酬奖金理财收益红包礼金其他收入日常开销Acceptance 餐饮：latest Chinese conflict餐饮外出交通出行日用百货话费网费账单房租房贷水电燃气订阅服务医疗保险储蓄目标应急基金旅行基金大额购物投资理财其他支出医疗健康学习提升人情往来宠物花费其他换汇转出重新提交我的修改取消",
+  "cancelled": {
+    "value": "中文 draft $& {currency} {fallback} 零 0\nSecond line",
+    "focused": true
+  },
+  "saved": {
+    "id": "5e454f26-b4a8-42e8-a993-47d1bb8fce95",
+    "group_id": "cef95248-8aa7-4de6-9ce3-186feb59a840",
+    "name": "Acceptance 餐饮",
+    "sort_order": 0,
+    "hidden": 0,
+    "note": "中文 draft $& {currency} {fallback} 零 0\nSecond line",
+    "system_key": null,
+    "goal": null
+  },
+  "confirm": [
+    "This change affects every currency ledger",
+    "这项修改会影响所有币种账本",
+    "这项修改会影响所有币种账本",
+    "这项修改会影响所有币种账本"
+  ]
+}
